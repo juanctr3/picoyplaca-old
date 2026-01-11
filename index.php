@@ -3,11 +3,12 @@
  * PICO Y PLACA - Sistema de Consulta de Restricciones Vehiculares
  * Versión 2.6 - Modularizada
  */
-
+$file_config = __DIR__ . '/datos/config.json';
+$file_festivos = __DIR__ . '/datos/festivos.json';
 require_once 'clases/PicoYPlaca.php';
-$config = require_once 'config-ciudades.php';
+$ciudades = json_decode(file_get_contents($file_config), true);
 $ciudades = $config['ciudades'];
-$festivos = $config['festivos'];
+$festivos = json_decode(file_get_contents($file_festivos), true);
 
 // -- DETECCIÓN DE PARÁMETROS --
 $vehiculo_sel = $_GET['vehicle'] ?? 'particular'; 
