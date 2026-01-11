@@ -440,112 +440,140 @@ select:focus {
 }
 
 /* ==============================================
-   BOTÓN FLOTANTE PWA - VISIBLE Y FIJO
+   BOTÓN PWA (App Móvil) - CORREGIDO Y RESPONSIVE
    ============================================== */
 
-.floating-install-btn {
+#pwaBtnContainer {
+    display: none; /* Oculto por defecto, JS lo activa */
     position: fixed;
-    bottom: 80px;
-    right: 20px;
-    display: flex;
-    gap: 12px;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 12px 20px;
+    border-radius: 50px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3); /* Sombra más fuerte para resaltar */
+    z-index: 10000; /* Z-index alto para estar sobre todo */
     align-items: center;
-    z-index: 9999;
-    animation: slideUp 0.4s ease-out;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-
-.floating-install-btn.hidden {
-    display: none !important;
-}
-
-@keyframes slideUp {
-    from {
-        transform: translateY(150px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-.floating-install-btn button {
-    padding: 14px 18px;
-    border-radius: 10px;
-    border: none;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.3s;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 1rem;
-    font-family: 'Poppins', sans-serif;
+    gap: 15px;
+    animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Rebote suave */
+    max-width: 90%; /* Evita que se salga en pantallas pequeñas */
+    width: auto;
     white-space: nowrap;
 }
 
-.floating-install-btn button:first-child {
+#pwaBtnContainer.show {
+    display: flex; /* Flex para alinear icono, texto y botones */
+}
+
+.pwa-icon {
+    font-size: 1.8rem;
+}
+
+.pwa-text {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.pwa-text strong {
+    color: #333;
+}
+
+.pwa-text span {
+    color: #666;
+    font-size: 0.75rem;
+}
+
+#installPwaBtn {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 25px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: transform 0.2s;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
-.floating-install-btn button:first-child:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
+#installPwaBtn:active {
+    transform: scale(0.95);
 }
 
-.floating-install-btn button:last-child {
-    background: #ff6b6b;
-    color: white;
-    padding: 12px 14px;
-    font-size: 1.3rem;
+#closePwaBtn {
+    background: #f1f2f6;
+    border: none;
+    color: #888;
+    font-size: 1rem;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: -5px;
 }
 
-.floating-install-btn button:last-child:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(255, 107, 107, 0.5);
-}
-
-@media (max-width: 768px) {
-    .floating-install-btn {
-        bottom: 70px;
-        right: 10px;
-        left: 10px;
-        gap: 8px;
-        width: calc(100% - 20px);
-    }
-
-    .floating-install-btn button {
-        padding: 12px 14px;
-        font-size: 0.9rem;
-    }
-}
-
+/* --- ADAPTACIÓN CELULARES (Responsive) --- */
 @media (max-width: 480px) {
-    .floating-install-btn {
-        bottom: 70px;
-        right: 8px;
-        left: 8px;
-        gap: 6px;
-        width: calc(100% - 16px);
+    #pwaBtnContainer {
+        bottom: 15px;
+        padding: 10px 15px;
+        gap: 10px;
+        width: 92%; /* Ocupar casi todo el ancho */
+        justify-content: space-between;
     }
 
-    .floating-install-btn button {
-        padding: 10px 12px;
-        font-size: 0.8rem;
-        flex: 1;
+    .pwa-text span {
+        display: none; /* Ocultar subtítulo en pantallas muy pequeñas para ahorrar espacio */
     }
+    
+    #installPwaBtn {
+        padding: 8px 15px;
+        font-size: 0.85rem;
+    }
+}
 
-    .floating-install-btn button:first-child span:last-child {
-        display: none;
-    }
+/* ANIMACIONES */
+@keyframes slideUp {
+    from { transform: translate(-50%, 100px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
 
-    .floating-install-btn button:last-child {
-        flex: 0.5;
-    }
+/* Modal iOS Styles */
+#iosModalPwa {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6);
+    z-index: 11000;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+#iosModalPwa.show { display: flex; opacity: 1; }
+
+.ios-modal-content {
+    background: white;
+    padding: 25px;
+    border-radius: 20px;
+    width: 85%;
+    max-width: 320px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+
+.ios-steps { text-align: left; margin: 20px 0; font-size: 0.9rem; color: #444; }
+.ios-steps li { margin-bottom: 10px; }
+.ios-modal-close {
+    background: #667eea; color: white; border: none; padding: 10px 30px; 
+    border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%;
 }
 
 /* ==============================================
