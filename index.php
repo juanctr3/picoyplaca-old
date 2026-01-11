@@ -216,7 +216,11 @@ include 'includes/header.php';
                 <?php 
                 if ($dateData['isWeekend']) {
                     echo '<span class="no-restriction">✅ Sin restricción (Fin de semana)</span>';
-                } elseif ($dateData['isHoliday']) {
+                } } elseif ($dateData['isHoliday']) {
+    // Recuperamos el nombre del festivo si existe
+    $nombre_festivo = $info_pyp['nombre_festivo'] ?? 'Día festivo';
+    echo '<span class="no-restriction">🎉 ' . htmlspecialchars($nombre_festivo) . ' (Sin restricción)</span>';
+} {
                     echo '<span class="no-restriction">✅ Sin restricción (Día festivo)</span>';
                 } else {
                     echo count($dateData['restrictions']) > 0 ? '<span class="has-restriction">⚠️ Hay restricción</span>' : '<span class="no-restriction">✅ Hoy no hay restricción</span>';
@@ -230,7 +234,11 @@ include 'includes/header.php';
             <?php
             if ($dateData['isWeekend']) {
                 echo '<p class="no-restriction">✅ Fin de semana</p>';
-            } elseif ($dateData['isHoliday']) {
+            } } elseif ($dateData['isHoliday']) {
+    // Recuperamos el nombre del festivo si existe
+    $nombre_festivo = $info_pyp['nombre_festivo'] ?? 'Día festivo';
+    echo '<span class="no-restriction">🎉 ' . htmlspecialchars($nombre_festivo) . ' (Sin restricción)</span>';
+} {
                 echo '<p class="no-restriction">✅ Día festivo</p>';
             } elseif (count($dateData['restrictions']) > 0) {
                 foreach ($dateData['restrictions'] as $p) echo '<span class="plate-badge restricted">' . $p . '</span>';
