@@ -3,16 +3,26 @@ class PicoYPlaca {
     private $ciudad_id;
     private $fecha;
     private $ciudades;
-    private $festivos;
+    private $festivos_map; // Guardaremos como array asociativo fecha => nombre
     private $vehiculo;
     private $config_v;
 
-    public function __construct($ciudad_id, DateTime $fecha, $ciudades, $festivos, $vehiculo = 'particular') {
+    public function __construct($ciudad_id, DateTime $fecha, $ciudades, $festivos_raw, $vehiculo = 'particular') {
         $this->ciudad_id = $ciudad_id;
         $this->fecha = $fecha;
         $this->ciudades = $ciudades;
-        $this->festivos = $festivos;
         $this->vehiculo = $vehiculo;
+        
+        // Transformar la lista de festivos a un mapa para búsqueda rápida: '2025-01-01' => 'Año Nuevo'
+        $this->festivos_map = [];
+        foreach ($festivos_raw as $f) {
+            if (is_array($f) && isset($f['fecha'])) {
+                $this->festivos_map[$f['fecha']] = $f['nombre'] ?? 'Festivo';
+            } elseif (is_string($f)) {
+                // Soporte retroactivo por si acaso
+                $this->festivos_map[$f] = 'Festivo';
+            }
+        }
         
         $this->config_v = $ciudades[$ciudad_id]['vehiculos'][$vehiculo] ?? $ciudades[$ciudad_id]['vehiculos']['particular'];
     }
@@ -25,6 +35,7 @@ class PicoYPlaca {
             'restricciones' => $this->calcularRestricciones(),
             'dia_nombre' => $this->getDiaNombre(),
             'es_festivo' => $this->esFestivo(),
+            'nombre_festivo' => $this->getNombreFestivo(), // Nuevo dato
             'es_fin_semana' => $this->esFinDeSemana()
         ];
     }
@@ -34,7 +45,6 @@ class PicoYPlaca {
         $dia_w = (int)$this->fecha->format('N'); // 1=Lun, 7=Dom
         $es_festivo = $this->esFestivo();
 
-        // 1. Validar días de aplicación
         $aplica_sab = $this->config_v['aplica_sabados'] ?? false;
         $aplica_dom = $this->config_v['aplica_domingos'] ?? false;
         $aplica_fest = $this->config_v['aplica_festivos'] ?? false;
@@ -43,7 +53,6 @@ class PicoYPlaca {
         if ($dia_w == 7 && !$aplica_dom) return [];
         if ($es_festivo && !$aplica_fest) return [];
 
-        // 2. Ejecutar lógica específica
         switch ($logica) {
             case 'bogota-particular':
                 $dia_mes = (int)$this->fecha->format('d');
@@ -53,20 +62,15 @@ class PicoYPlaca {
                 return $this->config_v['reglas'][$this->fecha->format('l')] ?? [];
 
             case 'secuencia-laboral-sabado':
-                // Avanza Lunes a Sábado. Si es festivo NO aplica restricción, pero ¿avanza secuencia?
-                // Según lógica general, avanza.
                 return $this->calcularSecuencia($this->config_v['ref_fecha'], $this->config_v['ref_digitos'], $this->config_v['salto'], true);
 
             case 'secuencia-continua':
-                // Avanza todos los días calendario
                 return $this->calcularSecuencia($this->config_v['ref_fecha'], $this->config_v['ref_digitos'], $this->config_v['salto'], false);
 
             case 'secuencia-retroceso-laboral':
-                // Cúcuta Taxis: Retrocede 1 (4,3,2,1,0) L-V
                 return $this->calcularRetrocesoLaboral();
 
             case 'pereira-taxis':
-                // Secuencia vertical +1 cada semana
                 return $this->calcularPereiraTaxis();
 
             case 'armenia-taxis':
@@ -77,16 +81,13 @@ class PicoYPlaca {
 
             case 'bucaramanga-rotacion-sabado':
                 if ($dia_w != 6) return $this->config_v['reglas_lv'][$this->fecha->format('l')] ?? [];
-                // Sábado rota +2 cada semana
                 $ref = new DateTime($this->config_v['ref_sabado_fecha']);
                 $weeks = floor($this->fecha->diff($ref)->days / 7);
                 $base = $this->config_v['ref_sabado_digitos'];
                 return [($base[0] + ($weeks*2))%10, ($base[1] + ($weeks*2))%10];
             
             case 'bucaramanga-taxis':
-                 // Rota semanalmente +2 (Base Lunes)
                  $ref = new DateTime($this->config_v['ref_fecha']);
-                 // Normalizar al lunes de la semana actual
                  $lunes_actual = clone $this->fecha;
                  if ($dia_w != 1) $lunes_actual->modify('last monday');
                  $weeks = floor($lunes_actual->diff($ref)->days / 7);
@@ -94,8 +95,6 @@ class PicoYPlaca {
                  return [($base[0] + ($weeks*2))%10, ($base[1] + ($weeks*2))%10];
 
             case 'bogota-carga-sabado':
-                 // Solo sábados. Alterna impar/par quincenalmente? No, semanalmente.
-                 // Nov 29 (Impar 13579) -> Dic 6 (Par 02468).
                  $ref = new DateTime('2025-11-29');
                  $weeks = floor($this->fecha->diff($ref)->days / 7);
                  return ($weeks % 2 == 0) ? [1,3,5,7,9] : [0,2,4,6,8];
@@ -107,15 +106,16 @@ class PicoYPlaca {
                 return $this->config_v['semestre_actual'][$this->fecha->format('l')] ?? [];
 
             case 'ibague-tpc':
-                // Ciclo 5 pares repetitivo
                 $ref = new DateTime($this->config_v['ref_fecha']);
                 $days = $this->fecha->diff($ref)->days;
                 $idx = $days % 5;
                 return $this->config_v['ciclo'][$idx];
                 
             case 'villavicencio-carga':
-                // Restringe TODOS (0-9) en el horario
                 return [0,1,2,3,4,5,6,7,8,9];
+                
+            case 'sin-restriccion':
+                return [];
 
             default:
                 return [];
@@ -127,8 +127,6 @@ class PicoYPlaca {
         $pasos = 0;
         
         if ($saltar_domingos) {
-            // Avanza Lun-Sab (Salta Domingos)
-            // Lógica optimizada: Contar días y restar domingos
             $temp = clone $ref;
             while($temp < $this->fecha) {
                 $temp->modify('+1 day');
@@ -146,17 +144,16 @@ class PicoYPlaca {
     }
 
     private function calcularRetrocesoLaboral() {
-        $ref = new DateTime($this->config_v['ref_fecha']); // Lunes
+        $ref = new DateTime($this->config_v['ref_fecha']);
         $habiles = 0;
         $temp = clone $ref;
         while($temp < $this->fecha) {
-            $w = $temp->format('N'); // 1-7
-            $f = in_array($temp->format('Y-m-d'), $this->festivos);
-            // Solo cuenta si es Lun-Vie no festivo
+            $w = $temp->format('N');
+            // Usamos el mapa de festivos para la lógica de días hábiles
+            $f = isset($this->festivos_map[$temp->format('Y-m-d')]);
             if ($w <= 5 && !$f) $habiles++;
             $temp->modify('+1 day');
         }
-        // Base 4. Resta 1 por día hábil.
         $base = $this->config_v['ref_digitos'][0];
         $res = ($base - $habiles) % 10;
         if ($res < 0) $res += 10;
@@ -164,64 +161,55 @@ class PicoYPlaca {
     }
     
     private function calcularPereiraTaxis() {
-        // Lunes base: 4. Cada semana +1.
-        $bases_dias = [1=>4, 2=>0, 3=>6, 4=>3, 5=>7, 7=>9]; // Bases Lun-Dom (Sab no aplica)
+        $bases_dias = [1=>4, 2=>0, 3=>6, 4=>3, 5=>7, 7=>9];
         $dia_w = (int)$this->fecha->format('N');
         if (!isset($bases_dias[$dia_w])) return [];
 
         $ref = new DateTime('2025-11-24');
         $lunes_actual = clone $this->fecha;
         if ($dia_w != 1) $lunes_actual->modify('last monday');
-        
         $weeks = floor($lunes_actual->diff($ref)->days / 7);
         return [($bases_dias[$dia_w] + $weeks) % 10];
     }
 
     private function calcularArmeniaTaxis() {
-        // Secuencia continua +1. Domingo consume 2.
-        $ref = new DateTime('2025-11-24'); // Lunes (5)
+        $ref = new DateTime('2025-11-24');
         $dias = $this->fecha->diff($ref)->days;
-        // Contar domingos pasados
         $domingos = 0;
         $temp = clone $ref;
         while($temp < $this->fecha) {
             if ($temp->format('N') == 7) $domingos++;
             $temp->modify('+1 day');
         }
-        
         $avance = $dias + $domingos; 
-        $base = 5; // Valor 24 Nov
+        $base = 5; 
         $val = ($base + $avance) % 10;
-        
         if ($this->fecha->format('N') == 7) return [$val, ($val+1)%10];
         return [$val];
     }
 
     private function calcularSantaMartaTaxis() {
-        // Base semanal retrocede 2.
-        $ref = new DateTime('2025-11-24'); // Sem 1 (5-6)
+        $ref = new DateTime('2025-11-24');
         $lunes_actual = clone $this->fecha;
         $dia_w = (int)$this->fecha->format('N');
         if ($dia_w != 1) $lunes_actual->modify('last monday');
-        
         $weeks = floor($lunes_actual->diff($ref)->days / 7);
-        // Base de la semana (Lunes)
         $b1 = (5 - ($weeks * 2)) % 10; if($b1<0) $b1+=10;
         $b2 = (6 - ($weeks * 2)) % 10; if($b2<0) $b2+=10;
-        
-        // Diario: Lun(+0), Mar(+2), Mie(+4), Jue(+6)
-        if ($dia_w <= 4) {
-            $add = ($dia_w - 1) * 2;
-            return [($b1+$add)%10, ($b2+$add)%10];
-        }
-        // Viernes (+8, solo 1 dígito), Sábado (+9, solo 1 dígito)
+        if ($dia_w <= 4) { $add = ($dia_w - 1) * 2; return [($b1+$add)%10, ($b2+$add)%10]; }
         if ($dia_w == 5) return [($b1+8)%10]; 
-        if ($dia_w == 6) return [($b1+9)%10]; // O b2+8, matemáticamente similar
+        if ($dia_w == 6) return [($b1+9)%10];
         return [];
     }
 
-    // Helpers Básicos
-    private function esFestivo() { return in_array($this->fecha->format('Y-m-d'), $this->festivos); }
+    private function esFestivo() { 
+        return isset($this->festivos_map[$this->fecha->format('Y-m-d')]); 
+    }
+    
+    private function getNombreFestivo() {
+        return $this->festivos_map[$this->fecha->format('Y-m-d')] ?? null;
+    }
+
     private function esFinDeSemana() { $n = $this->fecha->format('N'); return ($n==6 || $n==7); }
     private function getDiaNombre() {
         $d = ['1'=>'Lunes','2'=>'Martes','3'=>'Miércoles','4'=>'Jueves','5'=>'Viernes','6'=>'Sábado','7'=>'Domingo'];
