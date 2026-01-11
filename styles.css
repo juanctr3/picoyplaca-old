@@ -1,5 +1,5 @@
 /* ==============================================
-   PICO Y PLACA - ESTILOS FINALES SIN DESBORDE
+   PICO Y PLACA - ESTILOS CORREGIDOS (FINAL)
    ============================================== */
 
 * {
@@ -10,14 +10,14 @@
 
 html, body {
     width: 100%;
-    height: 100%;
-    overflow-x: hidden;
+    min-height: 100vh;
+    overflow-x: hidden; /* Seguridad extra para evitar scroll lateral */
+    position: relative;
 }
 
 body {
     font-family: 'Poppins', sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
     padding: 10px;
     color: #333;
 }
@@ -58,28 +58,8 @@ h1 {
     opacity: 0.95;
 }
 
-.install-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: white;
-    color: #667eea;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 0.85rem;
-    display: none;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.install-btn.show {
-    display: block;
-}
-
 /* ==============================================
-   MAIN SECTIONS
+   MAIN SECTIONS (Cajas Blancas)
    ============================================== */
 
 .search-box,
@@ -108,7 +88,7 @@ h1 {
 }
 
 /* ==============================================
-   SLIDER CIUDADES - SIN DESBORDE
+   SLIDER CIUDADES
    ============================================== */
 
 .slider-container {
@@ -191,15 +171,14 @@ h1 {
     min-height: 50px;
 }
 
+/* Scrollbar personalizada sutil */
 .slider-content::-webkit-scrollbar {
     height: 4px;
 }
-
 .slider-content::-webkit-scrollbar-track {
     background: rgba(102, 126, 234, 0.1);
     border-radius: 10px;
 }
-
 .slider-content::-webkit-scrollbar-thumb {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 10px;
@@ -240,7 +219,6 @@ h1 {
         font-size: 0.8rem;
         min-height: 40px;
     }
-    
     .slider-btn {
         width: 32px;
         height: 32px;
@@ -300,18 +278,17 @@ select:focus {
     .search-controls {
         gap: 8px;
     }
-
     input[type="text"],
     input[type="date"],
     select,
     .btn-search {
-        font-size: 16px;
+        font-size: 16px; /* Evita zoom en iOS */
         padding: 10px;
     }
 }
 
 /* ==============================================
-   SLIDER PLACAS - SIN DESBORDE
+   SLIDER PLACAS
    ============================================== */
 
 .plates-slider-label {
@@ -333,11 +310,9 @@ select:focus {
 .plates-slider::-webkit-scrollbar {
     height: 4px;
 }
-
 .plates-slider::-webkit-scrollbar-track {
     background: rgba(102, 126, 234, 0.1);
 }
-
 .plates-slider::-webkit-scrollbar-thumb {
     background: #667eea;
     border-radius: 10px;
@@ -422,17 +397,14 @@ select:focus {
     display: none;
     border-left: 5px solid;
 }
-
 .result-box.show {
     display: block;
 }
-
 .result-success {
     background: #d4edda;
     border-color: #28a745;
     color: #155724;
 }
-
 .result-restricted {
     background: #f8d7da;
     border-color: #dc3545;
@@ -440,30 +412,30 @@ select:focus {
 }
 
 /* ==============================================
-   BOTÓN PWA (App Móvil) - CORREGIDO Y RESPONSIVE
+   BOTÓN PWA (App Móvil) - CORREGIDO
    ============================================== */
 
 #pwaBtnContainer {
-    display: none; /* Oculto por defecto, JS lo activa */
+    display: none; /* Controlado por JS */
     position: fixed;
     bottom: 20px;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translateX(-50%); /* Centrado por defecto en Desktop */
     background: white;
     padding: 12px 20px;
     border-radius: 50px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.3); /* Sombra más fuerte para resaltar */
-    z-index: 10000; /* Z-index alto para estar sobre todo */
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    z-index: 10000;
     align-items: center;
     gap: 15px;
-    animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Rebote suave */
-    max-width: 90%; /* Evita que se salga en pantallas pequeñas */
+    animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    max-width: 90%;
     width: auto;
     white-space: nowrap;
 }
 
 #pwaBtnContainer.show {
-    display: flex; /* Flex para alinear icono, texto y botones */
+    display: flex;
 }
 
 .pwa-icon {
@@ -519,18 +491,23 @@ select:focus {
     margin-left: -5px;
 }
 
-/* --- ADAPTACIÓN CELULARES (Responsive) --- */
+/* --- FIX DESBORDE MÓVIL --- */
 @media (max-width: 480px) {
     #pwaBtnContainer {
-        bottom: 15px;
+        /* Cambio crítico para evitar overflow horizontal */
+        bottom: 20px;
+        left: 4%;     /* Margen seguro */
+        right: 4%;    /* Margen seguro */
+        width: auto;  /* Ocupar el espacio disponible respetando márgenes */
+        transform: none; /* ELIMINAMOS el translate que causa desborde */
+        
         padding: 10px 15px;
         gap: 10px;
-        width: 92%; /* Ocupar casi todo el ancho */
         justify-content: space-between;
     }
 
     .pwa-text span {
-        display: none; /* Ocultar subtítulo en pantallas muy pequeñas para ahorrar espacio */
+        display: none; /* Ahorrar espacio en pantallas muy pequeñas */
     }
     
     #installPwaBtn {
@@ -543,6 +520,14 @@ select:focus {
 @keyframes slideUp {
     from { transform: translate(-50%, 100px); opacity: 0; }
     to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+/* En móvil, ajustamos la animación para que coincida con la nueva posición */
+@media (max-width: 480px) {
+    @keyframes slideUp {
+        from { transform: translateY(100px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
 }
 
 /* Modal iOS Styles */
@@ -577,7 +562,7 @@ select:focus {
 }
 
 /* ==============================================
-   FOOTER
+   FOOTER & UTILIDADES
    ============================================== */
 
 footer {
@@ -586,11 +571,8 @@ footer {
     padding: 15px;
     opacity: 0.9;
     font-size: 0.9rem;
+    margin-bottom: 80px; /* Espacio extra para que el botón flotante no tape info */
 }
-
-/* ==============================================
-   UTILIDADES
-   ============================================== */
 
 .info-block {
     background: #f0f0f0;
@@ -601,13 +583,5 @@ footer {
     word-break: break-word;
 }
 
-.no-restriction {
-    color: #28a745;
-    font-weight: 700;
-}
-
-.has-restriction {
-    color: #dc3545;
-    font-weight: 700;
-}
-
+.no-restriction { color: #28a745; font-weight: 700; }
+.has-restriction { color: #dc3545; font-weight: 700; }
