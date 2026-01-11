@@ -32,10 +32,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
             color: var(--text-dark);
             height: 100vh;
             display: flex;
-            overflow: hidden; /* Evita scroll en el body, lo haremos en el contenido */
+            overflow: hidden; /* Evitamos scroll en el body entero */
         }
 
-        /* --- SIDEBAR --- */
+        /* --- SIDEBAR (Barra Lateral) --- */
         .sidebar {
             width: 260px;
             background: linear-gradient(180deg, var(--primary) 0%, var(--secondary) 100%);
@@ -46,6 +46,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             box-shadow: 4px 0 10px rgba(0,0,0,0.1);
             z-index: 100;
             transition: all 0.3s;
+            flex-shrink: 0;
         }
 
         .brand {
@@ -61,6 +62,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .nav-menu {
             list-style: none;
             flex: 1;
+            padding: 0;
         }
         
         .nav-item { margin-bottom: 8px; }
@@ -112,12 +114,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
         }
         .btn-logout:hover { color: var(--white); }
 
-        /* --- MAIN CONTENT --- */
+        /* --- MAIN CONTENT (Contenido Principal) --- */
         .main-content {
             flex: 1;
-            overflow-y: auto; /* Scroll solo aquí */
+            overflow-y: auto; /* El scroll ocurre solo aquí */
             padding: 30px;
             position: relative;
+            background-color: var(--bg-light);
         }
 
         /* --- COMPONENTES GLOBALES --- */
@@ -151,6 +154,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .btn-block { width: 100%; justify-content: center; }
         
         .btn-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; text-decoration: none; transition: background 0.2s; }
+        .btn-icon-sm { width: 24px; height: 24px; font-size: 12px; padding: 0; border: none; border-radius: 4px; cursor: pointer; }
+
         .btn-edit { background: #ebf8ff; color: #3182ce; }
         .btn-edit:hover { background: #bee3f8; }
         .btn-delete { background: #fff5f5; color: #e53e3e; }
@@ -159,9 +164,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
         /* Formularios */
         .form-group { margin-bottom: 20px; }
         .form-group label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-dark); }
-        .form-control { width: 100%; padding: 12px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 0.95rem; font-family: inherit; transition: border-color 0.2s; }
+        .form-control { width: 100%; padding: 12px 15px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 0.95rem; font-family: inherit; transition: border-color 0.2s; background: white; }
         .form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .text-danger { color: var(--danger); }
+        .text-muted { color: var(--text-light); }
         
         /* Tablas */
         .table-responsive { overflow-x: auto; }
@@ -169,7 +176,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .admin-table th { text-align: left; padding: 15px 20px; background: #f8fafc; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; color: var(--text-light); border-bottom: 2px solid #edf2f7; }
         .admin-table td { padding: 15px 20px; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
         .admin-table tr:last-child td { border-bottom: none; }
-        
+        .text-right { text-align: right; }
+
         /* Badges */
         .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
         .badge-gray { background: #e2e8f0; color: #4a5568; }
@@ -177,13 +185,15 @@ $current_page = basename($_SERVER['PHP_SELF']);
         
         /* Estados vacíos */
         .empty-state { text-align: center; padding: 50px 20px; }
+        .empty-state-small { text-align: center; padding: 30px; color: var(--text-light); background: #f8fafc; border-radius: 10px; border: 2px dashed #e2e8f0; }
         .empty-icon { font-size: 3rem; margin-bottom: 15px; opacity: 0.5; }
 
         /* Vehículo Card (Editar) */
-        .vehiculo-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 15px; transition: all 0.2s; }
-        .vehiculo-card:hover { border-color: #cbd5e0; background: #fff; }
-        .v-header { padding: 10px 15px; background: #edf2f7; border-bottom: 1px solid #e2e8f0; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.9rem; }
+        .vehiculo-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 15px; transition: all 0.2s; position: relative; }
+        .vehiculo-card:hover { border-color: #cbd5e0; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .v-header { padding: 10px 15px; background: #edf2f7; border-bottom: 1px solid #e2e8f0; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.9rem; color: #4a5568; }
         .v-body { padding: 15px; }
+        .v-drag-handle { cursor: move; margin-right: 10px; color: #a0aec0; }
         .form-row { display: flex; gap: 15px; margin-bottom: 10px; }
         .form-row .col { flex: 1; }
         
@@ -197,14 +207,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
             body { flex-direction: column; height: auto; overflow: auto; }
             .sidebar { width: 100%; padding: 15px; flex-direction: row; justify-content: space-between; align-items: center; position: sticky; top: 0; }
             .brand { margin-bottom: 0; font-size: 1.2rem; }
-            .nav-menu { display: none; /* Simplificación para móvil: Ocultar menú o hacer un toggle */ }
-            /* Para esta versión simple, en móvil se verán apilados si quitamos el display:none o requeriría JS para toggle. 
-               Dejaremos el menú visible en mobile pero horizontal para simplificar */
-            .sidebar { flex-direction: column; gap: 10px; }
-            .nav-menu { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; }
-            .nav-item { margin: 0; }
+            .nav-menu { display: none; } /* En móvil simplificado ocultamos menú o necesitaríamos JS para toggle. */
+            
+            /* Solución simple móvil: Menú horizontal scrollable */
+            .sidebar { display: block; overflow-x: auto; white-space: nowrap; padding: 10px; }
+            .brand { display: inline-block; margin-right: 20px; margin-bottom: 10px; }
+            .nav-menu { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 5px; }
+            .nav-item { display: inline-block; margin: 0; }
             .nav-link { padding: 8px 12px; font-size: 0.85rem; }
-            .user-info { display: none; }
+            .user-info { display: none; } /* Ocultar info usuario en móvil para ahorrar espacio */
+            
             .main-content { padding: 15px; overflow: visible; }
             .form-row { flex-direction: column; gap: 10px; }
         }
@@ -252,4 +264,3 @@ $current_page = basename($_SERVER['PHP_SELF']);
     </aside>
 
     <main class="main-content">
-        ```
