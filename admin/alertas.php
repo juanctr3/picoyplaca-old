@@ -1,27 +1,23 @@
 <?php
 /**
  * admin/alertas.php
- * Gestión de mensajes de emergencia o novedades globales.
+ * Gestión de Alertas informativas (Globales o por Ciudad).
+ * Permite comunicar emergencias, cambios de vías o avisos importantes.
  */
 
 require_once 'auth.php';
+require_once 'data_manager.php';
 
-// 1. Cargar configuración de alertas
-$archivo_datos = __DIR__ . '/../datos/alertas.json';
-$alerta = [
-    'activa' => false,
-    'mensaje' => '',
-    'tipo' => 'info', // info, warning, danger, success
-    'url' => ''
+// 1. Cargar datos
+$ciudades = DataManager::getCiudades();
+$alertas = DataManager::getAlertas();
+
+// 2. Mapeo de colores para la interfaz
+$tipos_alerta = [
+    'info'    => ['label' => 'Información', 'class' => 'badge-blue',  'color' => '#3182ce'],
+    'warning' => ['label' => 'Advertencia', 'class' => 'badge-warning', 'color' => '#dd6b20'],
+    'danger'  => ['label' => 'Peligro',     'class' => 'badge-danger',  'color' => '#e53e3e']
 ];
-
-if (file_exists($archivo_datos)) {
-    $json_content = file_get_contents($archivo_datos);
-    $datos_guardados = json_decode($json_content, true);
-    if ($datos_guardados) {
-        $alerta = array_merge($alerta, $datos_guardados);
-    }
-}
 
 include 'includes/header.php';
 ?>
@@ -30,101 +26,142 @@ include 'includes/header.php';
     
     <div class="admin-page-header">
         <div class="header-titles">
-            <h2>📢 Alertas y Novedades</h2>
-            <p class="subtitle">Configura un mensaje global visible en el inicio del sitio.</p>
+            <h2>📢 Gestión de Alertas</h2>
+            <p class="subtitle">Publica avisos importantes en la parte superior del sitio web.</p>
         </div>
     </div>
 
     <div class="row">
-        <div class="col-md-6 offset-md-3">
-            
-            <?php if (isset($_GET['msg'])): ?>
-                <div class="alert alert-success text-center">
-                    <?= htmlspecialchars($_GET['msg']) ?>
+        <div class="col-md-4">
+            <div class="card sticky-top" style="top: 20px;">
+                <div class="card-header-simple">
+                    <h3 class="card-title">➕ Nueva Alerta</h3>
                 </div>
-            <?php endif; ?>
-
-            <form action="procesar.php" method="POST">
-                <input type="hidden" name="accion" value="guardar_alerta">
-
-                <div class="card">
-                    <div class="card-header-simple">
-                        <h3>Configuración del Mensaje</h3>
-                    </div>
-                    
-                    <div class="form-group p-3" style="background: #f8f9fa; border-bottom: 1px solid #eee;">
-                        <label class="d-flex align-items-center justify-content-between cursor-pointer">
-                            <span class="font-weight-bold">Estado de la Alerta</span>
-                            <div class="toggle-switch">
-                                <input type="checkbox" name="activa" value="1" <?= $alerta['activa'] ? 'checked' : '' ?>>
-                                <span class="slider"></span>
-                            </div>
-                        </label>
-                        <small class="text-muted">Si está apagado, el mensaje no se mostrará a los usuarios.</small>
-                    </div>
-
-                    <div class="p-4">
+                <div class="card-body" style="padding: 20px;">
+                    <form action="procesar.php" method="POST">
+                        <input type="hidden" name="accion" value="guardar_alerta">
+                        
                         <div class="form-group">
-                            <label>Texto del Mensaje <span class="text-danger">*</span></label>
-                            <textarea name="mensaje" class="form-control" rows="3" placeholder="Ej: Se levanta el Pico y Placa hoy por paro de transportadores..." required><?= htmlspecialchars($alerta['mensaje']) ?></textarea>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Tipo de Alerta (Color)</label>
-                            <select name="tipo" class="form-control">
-                                <option value="info" <?= $alerta['tipo'] == 'info' ? 'selected' : '' ?>>🔵 Información (Azul)</option>
-                                <option value="warning" <?= $alerta['tipo'] == 'warning' ? 'selected' : '' ?>>🟡 Advertencia (Amarillo)</option>
-                                <option value="danger" <?= $alerta['tipo'] == 'danger' ? 'selected' : '' ?>>🔴 Crítico / Urgente (Rojo)</option>
-                                <option value="success" <?= $alerta['tipo'] == 'success' ? 'selected' : '' ?>>🟢 Positivo (Verde)</option>
+                            <label>Alcance (Ciudad)</label>
+                            <select name="ciudad_id" class="form-control" required>
+                                <option value="global">🌍 Global (Todas las ciudades)</option>
+                                <option disabled>----------------</option>
+                                <?php foreach ($ciudades as $slug => $data): ?>
+                                    <option value="<?php echo $slug; ?>"><?php echo $data['nombre']; ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label>Enlace "Ver más" (Opcional)</label>
-                            <input type="url" name="url" class="form-control" value="<?= htmlspecialchars($alerta['url']) ?>" placeholder="https://...">
-                            <small class="form-text text-muted">Si pones un link, aparecerá un botón en la alerta.</small>
+                            <label>Tipo de Mensaje</label>
+                            <select name="tipo" class="form-control">
+                                <option value="info">ℹ️ Información (Azul)</option>
+                                <option value="warning">⚠️ Advertencia (Naranja)</option>
+                                <option value="danger">🚨 Urgente / Peligro (Rojo)</option>
+                            </select>
                         </div>
 
-                        <hr>
+                        <div class="form-group">
+                            <label>Mensaje</label>
+                            <textarea name="mensaje" class="form-control" rows="4" placeholder="Ej: Se levanta el Pico y Placa por emergencia ambiental..." required></textarea>
+                        </div>
 
-                        <button type="submit" class="btn btn-primary btn-block btn-lg">💾 Guardar Configuración</button>
+                        <div class="form-group">
+                            <label>Enlace "Ver más" (Opcional)</label>
+                            <input type="url" name="url" class="form-control" placeholder="https://...">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; cursor:pointer;">
+                                <input type="checkbox" name="activa" value="1" checked style="width:auto; margin-right:10px;">
+                                Mostrar alerta inmediatamente
+                            </label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block">Publicar Alerta</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <?php if (empty($alertas)): ?>
+                <div class="empty-state">
+                    <div class="empty-icon">🔕</div>
+                    <h3>Sin alertas activas</h3>
+                    <p>El sitio web se muestra sin avisos de emergencia.</p>
+                </div>
+            <?php else: ?>
+                
+                <div class="card">
+                    <div class="card-header-simple">
+                        <h3>Alertas Publicadas</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Alcance</th>
+                                    <th>Mensaje</th>
+                                    <th>Estado</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($alertas as $index => $item): 
+                                    // Generar ID único temporal si no existe (compatibilidad)
+                                    $id_alerta = $item['id'] ?? $index;
+                                    $tipo_config = $tipos_alerta[$item['tipo']] ?? $tipos_alerta['info'];
+                                    
+                                    // Etiqueta Ciudad
+                                    $ciudad_nombre = ($item['ciudad_id'] === 'global') 
+                                        ? '🌍 Global' 
+                                        : ($ciudades[$item['ciudad_id']]['nombre'] ?? $item['ciudad_id']);
+                                ?>
+                                <tr>
+                                    <td width="25%">
+                                        <div style="font-weight:700; color:#2d3748;"><?php echo $ciudad_nombre; ?></div>
+                                        <span class="badge" style="background:<?php echo $tipo_config['color']; ?>20; color:<?php echo $tipo_config['color']; ?>;">
+                                            <?php echo $tipo_config['label']; ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div style="font-size:0.95rem; margin-bottom:5px;">
+                                            <?php echo htmlspecialchars($item['mensaje']); ?>
+                                        </div>
+                                        <?php if(!empty($item['url'])): ?>
+                                            <a href="<?php echo htmlspecialchars($item['url']); ?>" target="_blank" style="font-size:0.8rem; color:#667eea;">🔗 Ver enlace</a>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td width="15%">
+                                        <?php if($item['activa']): ?>
+                                            <span class="badge badge-blue">Activa</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-gray">Oculta</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="text-right">
+                                        <a href="procesar.php?accion=eliminar_alerta&id=<?php echo $id_alerta; ?>" 
+                                           class="btn-icon btn-delete" 
+                                           onclick="return confirm('¿Eliminar esta alerta?')" title="Borrar">
+                                            🗑️
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
-                <div class="mt-4 text-center">
-                    <h4>Vista Previa:</h4>
-                    <div class="alert-preview alert-<?= $alerta['tipo'] ?>" style="opacity: <?= $alerta['activa'] ? '1' : '0.5' ?>;">
-                        <strong><?= $alerta['tipo'] == 'danger' ? '¡ATENCIÓN!' : 'NOVEDAD:' ?></strong> 
-                        <?= $alerta['mensaje'] ? htmlspecialchars($alerta['mensaje']) : 'Aquí aparecerá tu mensaje...' ?>
-                        <?php if($alerta['url']): ?>
-                            <a href="#" class="alert-link">Ver más →</a>
-                        <?php endif; ?>
-                    </div>
-                    <?php if(!$alerta['activa']): ?>
-                        <small class="text-muted">(Actualmente desactivada)</small>
-                    <?php endif; ?>
-                </div>
-
-            </form>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
 <style>
-/* Estilos para el Toggle Switch y Alertas */
-.toggle-switch { position: relative; display: inline-block; width: 50px; height: 26px; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
-.slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-input:checked + .slider { background-color: #2ecc71; }
-input:checked + .slider:before { transform: translateX(24px); }
-
-.alert-preview { padding: 15px; border-radius: 8px; margin-top: 10px; text-align: left; border: 1px solid transparent; }
-.alert-info { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
-.alert-warning { background-color: #fff3cd; color: #856404; border-color: #ffeeba; }
-.alert-danger { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
-.alert-success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
-.alert-link { font-weight: bold; color: inherit; text-decoration: underline; margin-left: 10px; }
+    .badge-warning { background: #fffaf0; color: #dd6b20; }
+    .badge-danger { background: #fff5f5; color: #e53e3e; }
 </style>
 
 <?php include 'includes/footer.php'; ?>
