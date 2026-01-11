@@ -1,7 +1,7 @@
 <?php
 /**
  * PICO Y PLACA - Frontend Principal
- * Versión 3.5 - Reloj Inteligente + Pronóstico Semanal
+ * Versión 3.6 - Mensajes Claros y Pronóstico con Nombres
  */
 
 // 1. Cargar Clases y Datos
@@ -10,11 +10,15 @@ require_once 'clases/PicoYPlaca.php';
 $file_config = __DIR__ . '/datos/config.json';
 $file_festivos = __DIR__ . '/datos/festivos.json';
 $file_alerta = __DIR__ . '/datos/alertas.json';
+$file_excepciones = __DIR__ . '/datos/excepciones.json'; // Cargar excepciones globalmente
 
-// Cargar datos (con fallbacks vacíos para evitar errores)
+// Cargar datos (con fallbacks)
 $ciudades = file_exists($file_config) ? json_decode(file_get_contents($file_config), true) : [];
 $festivos = file_exists($file_festivos) ? json_decode(file_get_contents($file_festivos), true) : [];
-$alerta_global = file_exists($file_alerta) ? json_decode(file_get_contents($file_alerta), true) : null;
+// Filtrar alertas activas
+$alertas_raw = file_exists($file_alerta) ? json_decode(file_get_contents($file_alerta), true) : [];
+$alertas_activas = is_array($alertas_raw) ? array_filter($alertas_raw, function($a){ return isset($a['activa']) && $a['activa']; }) : [];
+
 
 // 2. Parámetros URL
 $vehiculo_sel = $_GET['vehicle'] ?? 'particular'; 
@@ -24,7 +28,7 @@ $isDatePage = false;
 $dateData = [];
 
 // =============================================================================
-// LÓGICA 1: DATOS DE "HOY" + PRONÓSTICO + RELOJ INTELIGENTE
+// LÓGICA 1: DATOS DE "HOY" + PRONÓSTICO + RELOJ
 // =============================================================================
 $ahora_global = new DateTime(); 
 $datos_hoy = [];
@@ -40,59 +44,48 @@ if (!empty($ciudades)) {
         $permitidas = array_values(array_diff($todas, $info_hoy['restricciones']));
 
         // --- B. Cálculo del PRÓXIMO EVENTO (Reloj Inteligente) ---
-        // Buscamos el siguiente cambio de estado relevante
         $target_timestamp = 0;
-        $estado_reloj = 'sin_datos'; // inicia, termina, libre
+        $estado_reloj = 'sin_datos';
         
-        $hora_actual = (int)$ahora_global->format('G'); // 0-23
-        $min_actual = (int)$ahora_global->format('i');
-        
-        // Extraer horario numérico (ej: 6 y 20 para 6am-8pm)
+        $hora_actual = (int)$ahora_global->format('G');
         $h_ini = 6; $h_fin = 20; 
+        
+        // Extraer horario numérico aproximado para el reloj
         if (preg_match('/(\d{1,2}).*?(\d{1,2})/', $info_hoy['horario'], $m)) {
             $h_ini = (int)$m[1];
-            // Ajuste básico pm->24h si es necesario (simple)
             $h_fin = (strpos(strtolower($info_hoy['horario']), 'p.m') !== false && (int)$m[2] < 12) ? (int)$m[2]+12 : (int)$m[2];
         }
 
+        // Determinar estado actual del reloj
         if (!empty($info_hoy['restricciones'])) {
-            // HOY HAY RESTRICCIÓN
             if ($hora_actual < $h_ini) {
-                // Falta para iniciar hoy
                 $target_timestamp = strtotime(date('Y-m-d') . " $h_ini:00:00");
                 $estado_reloj = 'inicia';
             } elseif ($hora_actual >= $h_ini && $hora_actual < $h_fin) {
-                // Estamos EN restricción, cuenta para terminar
                 $target_timestamp = strtotime(date('Y-m-d') . " $h_fin:00:00");
                 $estado_reloj = 'termina';
             } else {
-                // Ya acabó por hoy -> Buscar siguiente día hábil
                 $estado_reloj = 'proximo';
             }
         } else {
-            // Hoy es libre -> Buscar siguiente día con restricción
             $estado_reloj = 'proximo';
         }
 
-        // Si necesitamos buscar el próximo día con medida (Loop futuro)
+        // Buscar siguiente día con medida (Loop futuro)
         if ($estado_reloj === 'proximo') {
             $fecha_iter = clone $ahora_global;
             $encontrado = false;
-            $limite_dias = 15; // No buscar más de 15 días para no colgar
-
-            for ($i = 1; $i <= $limite_dias; $i++) {
+            for ($i = 1; $i <= 15; $i++) {
                 $fecha_iter->modify('+1 day');
                 $pyp_futuro = new PicoYPlaca($codigo, $fecha_iter, $ciudades, $festivos, $tipo_v);
                 $res_futuro = $pyp_futuro->getInfo();
-
                 if (!empty($res_futuro['restricciones'])) {
-                    // ¡Encontramos el próximo día con pico y placa!
                     $target_timestamp = strtotime($fecha_iter->format('Y-m-d') . " $h_ini:00:00");
                     $encontrado = true;
                     break;
                 }
             }
-            if (!$encontrado) $target_timestamp = 0; // No hay medidas cercanas
+            if (!$encontrado) $target_timestamp = 0;
         }
 
         // --- C. Pronóstico 5 Días ---
@@ -104,15 +97,25 @@ if (!empty($ciudades)) {
             $f_pron->modify('+1 day');
             $pyp_p = new PicoYPlaca($codigo, $f_pron, $ciudades, $festivos, $tipo_v);
             $inf_p = $pyp_p->getInfo();
+            
+            // Texto a mostrar: Placas o Nombre del Festivo/Excepción
+            $texto_placas = !empty($inf_p['restricciones']) ? implode('-', $inf_p['restricciones']) : '✅';
+            
+            // Detectar motivo de "Día Libre" para mostrarlo
+            $motivo_libre = '';
+            if ($inf_p['es_festivo']) $motivo_libre = $inf_p['nombre_festivo'] ?? 'Festivo';
+            if ($inf_p['es_excepcion'] ?? false) $motivo_libre = $inf_p['nombre_festivo']; // Reusamos el campo para excepciones
+
             $pronostico[] = [
                 'dia' => $dias_semana_abrev[$f_pron->format('w')],
                 'fecha' => $f_pron->format('d/m'),
                 'estado' => !empty($inf_p['restricciones']) ? 'ocupado' : ($inf_p['es_festivo'] ? 'festivo' : 'libre'),
-                'placas' => !empty($inf_p['restricciones']) ? implode('-', $inf_p['restricciones']) : '✅'
+                'placas' => $texto_placas,
+                'motivo_libre' => $motivo_libre // Nuevo campo para el JS
             ];
         }
 
-        // Guardar todo en el array maestro
+        // Guardar datos maestros
         $datos_hoy[$codigo] = [
             'restricciones' => $info_hoy['restricciones'],
             'permitidas' => $permitidas,
@@ -120,8 +123,7 @@ if (!empty($ciudades)) {
             'nombre' => $info['nombre'],
             'vehiculo_label' => $info_hoy['vehiculo_label'],
             'nombre_festivo' => $info_hoy['nombre_festivo'],
-            
-            // Nuevos datos para el reloj y pronóstico
+            'es_excepcion' => $info_hoy['es_excepcion'] ?? false,
             'target_ts' => $target_timestamp, 
             'estado_reloj' => $estado_reloj,
             'pronostico' => $pronostico
@@ -132,7 +134,7 @@ $datos_hoy_json = json_encode($datos_hoy);
 
 
 // =============================================================================
-// LÓGICA 2: PÁGINA FECHA ESPECÍFICA (SEO) - Igual que antes
+// LÓGICA 2: PÁGINA FECHA ESPECÍFICA (SEO)
 // =============================================================================
 if (preg_match('/pico-y-placa\/(\d{4})-(\d{2})-(\d{2})-(\w+)/', $_SERVER['REQUEST_URI'], $matches)) {
     $year = (int)$matches[1]; $month = (int)$matches[2]; $day = (int)$matches[3]; $ciudad_slug = $matches[4];
@@ -157,6 +159,7 @@ if (preg_match('/pico-y-placa\/(\d{4})-(\d{2})-(\d{2})-(\w+)/', $_SERVER['REQUES
                 'isWeekend' => $info_pyp['es_fin_semana'],
                 'isHoliday' => $info_pyp['es_festivo'],
                 'holidayName' => $info_pyp['nombre_festivo'],
+                'isException' => $info_pyp['es_excepcion'] ?? false,
                 'horario' => $info_pyp['horario'],
                 'vehiculo' => $info_pyp['vehiculo_label']
             ];
@@ -175,28 +178,40 @@ $ciudad_nombre_seo = $ciudades[$ciudad_sel_url]['nombre'] ?? 'Colombia';
 if ($isDatePage) {
     $placas_txt = count($dateData['restrictions']) > 0 ? implode('-', $dateData['restrictions']) : 'Sin restricción';
     if($dateData['isHoliday']) $placas_txt = "Festivo (" . $dateData['holidayName'] . ")";
+    if($dateData['isException']) $placas_txt = "Medida Levantada (" . $dateData['holidayName'] . ")"; // En excepciones holidayName trae el motivo
+    
     $title = "Pico y placa $nombre_vehiculo_seo el " . ucfirst($dateData['dayNameEs']) . " " . $dateData['dayNum'] . " de " . ucfirst($dateData['monthName']) . " en " . $dateData['cityName'];
-    $description = "Restricción $nombre_vehiculo_seo en " . $dateData['cityName'] . " el " . $dateData['dayNameEs'] . ". Placas: $placas_txt";
+    $description = "Restricción $nombre_vehiculo_seo en " . $dateData['cityName'] . " el " . $dateData['dayNameEs'] . ". Estado: $placas_txt";
     $canonical = "https://picoyplacabogota.com.co/pico-y-placa/{$dateData['year']}-" . str_pad($dateData['month'], 2, '0', STR_PAD_LEFT) . "-" . str_pad($dateData['day'], 2, '0', STR_PAD_LEFT) . "-{$dateData['citySlug']}?vehicle=$vehiculo_sel";
 } else {
     $title = "Pico y Placa $nombre_vehiculo_seo HOY en $ciudad_nombre_seo 🚗 | " . date('Y');
-    $description = "Consulta el pico y placa para $nombre_vehiculo_seo en $ciudad_nombre_seo. Horarios y calendario oficial.";
+    $description = "Consulta el pico y placa para $nombre_vehiculo_seo en $ciudad_nombre_seo. Horarios, festivos y mapas actualizados.";
     $canonical = "https://picoyplacabogota.com.co/?city=$ciudad_sel_url&vehicle=$vehiculo_sel";
 }
 
 include 'includes/header.php';
 ?>
 
-<?php if ($alerta_global && isset($alerta_global['activa']) && $alerta_global['activa']): ?>
-    <div class="container mt-3">
-        <div class="alert alert-<?php echo $alerta_global['tipo'] ?? 'info'; ?>" style="border-left: 5px solid rgba(0,0,0,0.2); box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-            <strong>📢 ATENCIÓN:</strong> <?php echo htmlspecialchars($alerta_global['mensaje']); ?>
-            <?php if (!empty($alerta_global['url'])): ?>
-                <a href="<?php echo htmlspecialchars($alerta_global['url']); ?>" style="font-weight:bold; text-decoration:underline; margin-left:5px;">Ver más detalles →</a>
-            <?php endif; ?>
-        </div>
-    </div>
-<?php endif; ?>
+<?php 
+if (!empty($alertas_activas)) {
+    foreach ($alertas_activas as $alerta) {
+        // Mostrar si es global o coincide con la ciudad actual
+        if ($alerta['ciudad_id'] === 'global' || $alerta['ciudad_id'] === $ciudad_sel_url) {
+            ?>
+            <div class="container mt-3">
+                <div class="alert alert-<?php echo $alerta['tipo'] ?? 'info'; ?>" style="border-left: 5px solid rgba(0,0,0,0.2); box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <strong>📢 <?php echo ($alerta['ciudad_id'] !== 'global') ? $ciudades[$alerta['ciudad_id']]['nombre'] . ':' : 'ATENCIÓN:'; ?></strong> 
+                    <?php echo htmlspecialchars($alerta['mensaje']); ?>
+                    <?php if (!empty($alerta['url'])): ?>
+                        <a href="<?php echo htmlspecialchars($alerta['url']); ?>" style="font-weight:bold; text-decoration:underline; margin-left:5px;">Ver más →</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php
+        }
+    }
+}
+?>
 
 
 <?php if (!$isDatePage): ?>
@@ -265,10 +280,12 @@ include 'includes/header.php';
             <h2 style="margin-bottom: 12px;">Restricciones HOY</h2>
             <h3 id="city-today" style="color: #667eea; margin-bottom: 10px;">--</h3>
             
-            <p style="margin-bottom: 5px; font-weight: 600;">🚫 No circulan:</p>
+            <div id="dynamic-message-container" style="margin-bottom:15px; display:none; background:#f0fff4; color:#276749; padding:10px; border-radius:8px; border:1px solid #c6f6d5; font-weight:600;"></div>
+
+            <p id="label-restricted" style="margin-bottom: 5px; font-weight: 600;">🚫 No circulan:</p>
             <div class="plates-list" id="plates-restricted-today"></div>
             
-            <p style="margin: 15px 0 5px 0; font-weight: 600;">✅ Pueden circular:</p>
+            <p id="label-allowed" style="margin: 15px 0 5px 0; font-weight: 600;">✅ Pueden circular:</p>
             <div class="plates-list" id="plates-allowed-today"></div>
 
             <div style="margin-top: 25px; padding-top: 20px; border-top: 2px dashed #eee;">
@@ -284,7 +301,7 @@ include 'includes/header.php';
             👮‍♂️ ¡Evita la Multa!
         </h3>
         <p style="margin-top: 10px; font-size: 0.95rem; color: #742a2a;">
-            La sanción por incumplir el Pico y Placa es la <strong>C.14</strong>:
+            La sanción por incumplir la medida es la <strong>C.14</strong>:
         </p>
         <ul style="margin: 10px 0 10px 20px; font-size: 0.95rem; color: #742a2a;">
             <li>Multa de <strong>15 SMDLV</strong> (Aprox. $650.000 COP).</li>
@@ -317,17 +334,14 @@ include 'includes/header.php';
             🚗 Pico y Placa: <?php echo htmlspecialchars($dateData['cityName']); ?>
         </h3>
         
-        <?php if (!empty($dateData['vehiculo'])): ?>
-            <span class="badge badge-blue" style="margin-bottom: 20px; font-size: 0.9rem; padding: 6px 12px; background: #e0e7ff; color: #4338ca; border-radius: 20px;">
-                Vehículo: <?php echo $dateData['vehiculo']; ?>
-            </span>
-        <?php endif; ?>
-                
         <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #e2e8f0;">
             <p style="margin-bottom: 8px;"><strong>🕐 Horario:</strong> <?php echo htmlspecialchars($dateData['horario']); ?></p>
             <p><strong>📊 Estado:</strong> 
                 <?php 
-                if ($dateData['isWeekend']) {
+                if ($dateData['isException']) {
+                    $motivo = !empty($dateData['holidayName']) ? $dateData['holidayName'] : 'Medida Levantada';
+                    echo '<span class="no-restriction" style="color:#27ae60; font-weight:bold;">🔓 ' . htmlspecialchars($motivo) . '</span>';
+                } elseif ($dateData['isWeekend']) {
                     echo '<span class="no-restriction" style="color:#27ae60; font-weight:bold;">✅ Sin restricción (Fin de semana)</span>';
                 } elseif ($dateData['isHoliday']) {
                     $festivo_nombre = !empty($dateData['holidayName']) ? $dateData['holidayName'] : 'Día Festivo';
@@ -335,7 +349,7 @@ include 'includes/header.php';
                 } else {
                     echo count($dateData['restrictions']) > 0 
                         ? '<span class="has-restriction" style="color:#e74c3c; font-weight:bold;">⚠️ Aplica Medida</span>' 
-                        : '<span class="no-restriction" style="color:#27ae60; font-weight:bold;">✅ Día Libre (Sin pico y placa)</span>';
+                        : '<span class="no-restriction" style="color:#27ae60; font-weight:bold;">✅ Día Libre</span>';
                 }
                 ?>
             </p>
@@ -346,12 +360,13 @@ include 'includes/header.php';
                 <p style="margin-bottom: 10px; font-weight: 600; color: #e74c3c;">🚫 Placas con restricción:</p>
                 <div class="plates-list">
                     <?php
-                    if ($dateData['isWeekend'] || $dateData['isHoliday']) {
-                        echo '<p class="no-restriction">✅ No aplica</p>';
+                    if ($dateData['isWeekend'] || $dateData['isHoliday'] || $dateData['isException']) {
+                        // Mensaje claro en fecha específica también
+                        echo '<p class="no-restriction" style="color:#555;">No aplica, pueden circular todos.</p>';
                     } elseif (count($dateData['restrictions']) > 0) {
                         foreach ($dateData['restrictions'] as $p) echo '<span class="plate-badge restricted">' . $p . '</span>';
                     } else {
-                        echo '<p class="no-restriction">✅ Ninguna</p>';
+                        echo '<p class="no-restriction">Ninguna (Día sin restricción)</p>';
                     }
                     ?>
                 </div>
@@ -361,8 +376,8 @@ include 'includes/header.php';
                 <p style="margin-bottom: 10px; font-weight: 600; color: #27ae60;">✅ Placas habilitadas:</p>
                 <div class="plates-list">
                     <?php
-                    if ($dateData['isWeekend'] || $dateData['isHoliday'] || count($dateData['restrictions']) === 0) {
-                        echo '<span class="plate-badge">0</span><span class="plate-badge">1</span><span class="plate-badge">2</span><span class="plate-badge">3</span><span class="plate-badge">4</span><span class="plate-badge">5</span><span class="plate-badge">6</span><span class="plate-badge">7</span><span class="plate-badge">8</span><span class="plate-badge">9</span>';
+                    if ($dateData['isWeekend'] || $dateData['isHoliday'] || $dateData['isException'] || count($dateData['restrictions']) === 0) {
+                        echo '<span class="plate-badge wide">Todas las placas están autorizadas</span>';
                     } else {
                         foreach ($dateData['allowed'] as $p) echo '<span class="plate-badge">' . $p . '</span>';
                     }
@@ -377,7 +392,6 @@ include 'includes/header.php';
 <script>
     <?php if (!$isDatePage): ?>
     
-    // Datos inyectados desde PHP
     const DATA_PYP = <?php echo $datos_hoy_json; ?>;
     let selectedCity = '<?php echo $ciudad_sel_url; ?>';
     let countdownInterval;
@@ -394,33 +408,58 @@ include 'includes/header.php';
         const options = {weekday: 'long', day: 'numeric', month: 'long'};
         document.getElementById('today-date').textContent = today.toLocaleDateString('es-CO', options);
 
-        // 2. Estado Restricción (Texto)
+        // 2. Estado Restricción (Texto Inteligente)
         const statusEl = document.getElementById('today-status');
         const restrictedContainer = document.getElementById('plates-restricted-today');
         const allowedContainer = document.getElementById('plates-allowed-today');
+        const labelRestricted = document.getElementById('label-restricted');
+        const msgContainer = document.getElementById('dynamic-message-container');
         
-        // Limpiar contenedores
+        // Reset
         restrictedContainer.innerHTML = '';
         allowedContainer.innerHTML = '';
+        labelRestricted.style.display = 'block';
+        msgContainer.style.display = 'none';
 
-        if (data.nombre_festivo) {
+        // Lógica de Mensajes
+        if (data.es_excepcion) {
+            // MEDIDA LEVANTADA (Excepción)
+            statusEl.innerHTML = '<span style="color:#27ae60;">🔓 Medida Levantada</span>';
+            msgContainer.style.display = 'block';
+            msgContainer.innerHTML = '✨ ' + (data.nombre_festivo || 'Medida levantada temporalmente');
+            
+            labelRestricted.style.display = 'none';
+            allowedContainer.innerHTML = '<span class="plate-badge wide">Todas las placas están autorizadas</span>';
+            
+        } else if (data.nombre_festivo) {
+            // FESTIVO
             statusEl.innerHTML = '<span style="color:#27ae60;">🎉 ' + data.nombre_festivo + '</span>';
-            restrictedContainer.innerHTML = '<span style="color:#888;">No aplica (Festivo)</span>';
-            allowedContainer.innerHTML = '<span class="plate-badge">0-9</span>';
+            msgContainer.style.display = 'block';
+            msgContainer.innerHTML = '🎉 Hoy es ' + data.nombre_festivo + ', pueden circular todos los vehículos.';
+            
+            labelRestricted.style.display = 'none'; // Ocultamos "No circulan"
+            allowedContainer.innerHTML = '<span class="plate-badge wide">Todas las placas están autorizadas</span>';
+
         } else if (data.restricciones.length > 0) {
+            // HAY RESTRICCIÓN NORMAL
             statusEl.innerHTML = '<span style="color:#e74c3c;">🚫 Hay Pico y Placa</span>';
             data.restricciones.forEach(p => restrictedContainer.innerHTML += `<span class="plate-badge restricted">${p}</span>`);
             data.permitidas.forEach(p => allowedContainer.innerHTML += `<span class="plate-badge">${p}</span>`);
+
         } else {
+            // DÍA LIBRE (Fin de semana o día sin medida normal)
             statusEl.innerHTML = '<span style="color:#27ae60;">✅ Sin Restricción</span>';
-            restrictedContainer.innerHTML = '<span>Ninguna</span>';
-            allowedContainer.innerHTML = '<span class="plate-badge">0-9</span>';
+            msgContainer.style.display = 'block';
+            msgContainer.innerHTML = '✅ Hoy no aplica la medida en ' + data.nombre + '.';
+            
+            labelRestricted.style.display = 'none';
+            allowedContainer.innerHTML = '<span class="plate-badge wide">Todas las placas están autorizadas</span>';
         }
 
-        // 3. Actualizar Reloj con Timestamp Exacto del Servidor
+        // 3. Actualizar Reloj
         startCountdown(data.target_ts, data.estado_reloj);
 
-        // 4. Renderizar Pronóstico 5 Días
+        // 4. Pronóstico
         renderForecast(data.pronostico);
     }
 
@@ -428,61 +467,40 @@ include 'includes/header.php';
         clearInterval(countdownInterval);
         const titleEl = document.getElementById('countdownTitle');
         const msgEl = document.getElementById('countdownMessage');
-        const container = document.getElementById('countdownContainer');
-
+        
+        // ... (Lógica del reloj igual, solo limpiamos mensajes si no hay datos) ...
         if (estado === 'sin_datos' || targetTimestamp === 0) {
-            titleEl.textContent = '✅ Sin Medida Próxima';
-            msgEl.textContent = 'No hay restricciones programadas pronto.';
-            document.body.classList.remove('pico-activo');
+            titleEl.textContent = '✅ Libre';
+            msgEl.textContent = 'No hay restricciones próximas.';
             return;
         }
-
-        let titulo = '';
-        let mensaje = '';
-
-        if (estado === 'inicia') {
-            titulo = '⏳ Inicia en:';
-            mensaje = 'La medida comienza hoy. ¡Atento!';
-            document.body.classList.remove('pico-activo');
-        } else if (estado === 'termina') {
-            titulo = '🚨 Termina en:';
-            mensaje = 'Restricción activa ahora mismo.';
-            document.body.classList.add('pico-activo');
-        } else if (estado === 'proximo') {
-            titulo = '📅 Próxima Medida:';
-            // Convertir timestamp a fecha legible para el mensaje
-            const dateObj = new Date(targetTimestamp * 1000);
-            const diaSemana = dateObj.toLocaleDateString('es-CO', {weekday: 'long'});
-            const hora = dateObj.getHours();
-            const ampm = hora >= 12 ? 'PM' : 'AM';
-            const hora12 = hora % 12 || 12;
-            mensaje = `Inicia el ${diaSemana} a las ${hora12}:00 ${ampm}`;
-            document.body.classList.remove('pico-activo');
+        
+        let titulo = '', mensaje = '';
+        if (estado === 'inicia') { titulo = '⏳ Inicia en:'; mensaje = 'La medida comienza hoy.'; }
+        else if (estado === 'termina') { titulo = '🚨 Termina en:'; mensaje = 'Restricción activa.'; }
+        else if (estado === 'proximo') { 
+            titulo = '📅 Próxima:'; 
+            const d = new Date(targetTimestamp * 1000);
+            const dia = d.toLocaleDateString('es-CO', {weekday:'long'});
+            const hora = d.getHours() > 12 ? (d.getHours()-12)+' PM' : d.getHours()+' AM';
+            mensaje = `Inicia el ${dia} a las ${hora}`;
         }
-
+        
         titleEl.textContent = titulo;
         msgEl.textContent = mensaje;
 
         function tick() {
             const now = Math.floor(Date.now() / 1000);
             const diff = targetTimestamp - now;
-
-            if (diff <= 0) {
-                // Si llegamos a 0, recargamos para actualizar estado (ej: de "inicia" pasa a "termina")
-                location.reload(); 
-                return;
-            }
-
-            const h = Math.floor(diff / 3600);
-            const m = Math.floor((diff % 3600) / 60);
-            const s = diff % 60;
-
-            document.getElementById('countdownHours').textContent = h.toString().padStart(2, '0');
-            document.getElementById('countdownMinutes').textContent = m.toString().padStart(2, '0');
-            document.getElementById('countdownSeconds').textContent = s.toString().padStart(2, '0');
+            if (diff <= 0) { location.reload(); return; }
+            const h = Math.floor(diff / 3600).toString().padStart(2,'0');
+            const m = Math.floor((diff % 3600) / 60).toString().padStart(2,'0');
+            const s = (diff % 60).toString().padStart(2,'0');
+            document.getElementById('countdownHours').textContent = h;
+            document.getElementById('countdownMinutes').textContent = m;
+            document.getElementById('countdownSeconds').textContent = s;
         }
-
-        tick(); // Ejecutar inmediatamente
+        tick();
         countdownInterval = setInterval(tick, 1000);
     }
 
@@ -496,12 +514,21 @@ include 'includes/header.php';
             const colorBorde = esLibre ? '#c6f6d5' : '#fed7d7';
             const icono = dia.estado === 'festivo' ? '🎉' : (esLibre ? '✅' : '🚫');
             
+            // Si es festivo/excepción mostramos el Nombre, si no las placas
+            let contenidoCentral = dia.placas;
+            let estiloFuente = "font-size: 0.85rem; font-weight: 700; color: #333;";
+            
+            if (dia.motivo_libre) {
+                contenidoCentral = dia.motivo_libre; // Ej: "Jueves Santo"
+                estiloFuente = "font-size: 0.75rem; font-weight: 600; color: #276749; line-height:1.1;";
+            }
+
             const html = `
-                <div style="min-width: 80px; background: ${colorBg}; border: 1px solid ${colorBorde}; border-radius: 8px; padding: 8px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                <div style="min-width: 90px; background: ${colorBg}; border: 1px solid ${colorBorde}; border-radius: 8px; padding: 8px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
                     <div style="font-size: 0.8rem; font-weight: bold; color: #555;">${dia.dia}</div>
                     <div style="font-size: 0.75rem; color: #999;">${dia.fecha}</div>
                     <div style="font-size: 1.2rem; margin: 5px 0;">${icono}</div>
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #333;">${dia.placas}</div>
+                    <div style="${estiloFuente}">${contenidoCentral}</div>
                 </div>
             `;
             container.innerHTML += html;
@@ -510,62 +537,59 @@ include 'includes/header.php';
 
     function selectCity(cityCode) {
         selectedCity = cityCode;
-        // Actualizar UI
         document.querySelectorAll('.city-btn').forEach(btn => btn.classList.remove('active'));
         document.getElementById('btn-'+cityCode).classList.add('active');
         updateUI();
-        
-        // Actualizar URL sin recargar (SEO friendly)
         const url = new URL(window.location);
         url.searchParams.set('city', cityCode);
         window.history.pushState({}, '', url);
-        
-        // Limpiar resultado búsqueda manual
-        document.getElementById('result-box').innerHTML = '';
-        document.getElementById('result-box').className = 'result-box';
     }
 
     function searchPlate() {
         const val = document.getElementById('plate-input').value;
-        if (!val || isNaN(val)) { alert('Ingresa un número (0-9)'); return; }
-        
+        if (!val || isNaN(val)) { alert('Ingresa un número'); return; }
         const digit = parseInt(val);
         const data = DATA_PYP[selectedCity];
+        
+        // Si hay excepción o festivo, no hay restricción
+        if (data.nombre_festivo || data.es_excepcion || data.restricciones.length === 0) {
+            document.getElementById('result-box').className = 'result-box result-success';
+            document.getElementById('result-box').innerHTML = `<strong>✅ Habilitado:</strong> Hoy no aplica medida para ninguna placa.`;
+            document.getElementById('result-box').style.display = 'block';
+            return;
+        }
+
         const restricted = data.restricciones.includes(digit);
         const box = document.getElementById('result-box');
-        
         box.style.display = 'block';
         if (restricted) {
-            box.className = 'result-box result-restricted'; // Clase CSS roja
-            box.innerHTML = `<strong>⚠️ Restricción:</strong> Tu placa ${digit} NO puede circular hoy en ${data.nombre}.`;
+            box.className = 'result-box result-restricted';
+            box.innerHTML = `<strong>⚠️ Restricción:</strong> Tu placa ${digit} NO puede circular hoy.`;
         } else {
-            box.className = 'result-box result-success'; // Clase CSS verde
+            box.className = 'result-box result-success';
             box.innerHTML = `<strong>✅ Habilitado:</strong> Puedes circular hoy con placa ${digit}.`;
         }
     }
-
-    // Scroll horizontal ciudades
+    
     function scrollCities(dir) {
         const el = document.getElementById('citiesSlider');
-        const scrollAmount = 150;
-        el.scrollBy({ left: dir === 'left' ? -scrollAmount : scrollAmount, behavior: 'smooth' });
+        el.scrollBy({ left: dir==='left'?-150:150, behavior: 'smooth' });
     }
-    
-    // Búsqueda por fecha (Formulario)
     function searchByDate(e) {
         e.preventDefault();
         const d = document.getElementById('dateInput').value;
         const c = document.getElementById('citySelect').value;
-        if(d && c) {
-            window.location.href = `/pico-y-placa/${d}-${c}`;
-        }
+        if(d && c) window.location.href = `/pico-y-placa/${d}-${c}`;
     }
     function backToHome() { window.location.href = '/'; }
 
-    // Inicializar
     document.addEventListener('DOMContentLoaded', updateUI);
     
     <?php endif; ?>
 </script>
+
+<style>
+    .plate-badge.wide { width: auto; padding: 5px 15px; border-radius: 6px; font-weight: 600; background: #e6fffa; color: #2c7a7b; border: 1px solid #b2f5ea; }
+</style>
 
 <?php include 'includes/footer.php'; ?>
