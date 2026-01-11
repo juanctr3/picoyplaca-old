@@ -85,10 +85,22 @@ class DataManager {
     }
 
     public static function saveFestivos($datos) {
-        // Aseguramos que los festivos estén ordenados y sin duplicados antes de guardar
-        $datos = array_unique($datos);
-        sort($datos);
-        return self::save(self::FILE_FESTIVOS, $datos);
+        // Ordenar array de objetos por la clave "fecha"
+        usort($datos, function($a, $b) {
+            return strcmp($a['fecha'], $b['fecha']);
+        });
+        
+        // Eliminar duplicados de fecha
+        $unicos = [];
+        $fechas_vistas = [];
+        foreach($datos as $d) {
+            if(!in_array($d['fecha'], $fechas_vistas)) {
+                $fechas_vistas[] = $d['fecha'];
+                $unicos[] = $d;
+            }
+        }
+        
+        return self::save(self::FILE_FESTIVOS, $unicos);
     }
 
     public static function getAlerta() {
