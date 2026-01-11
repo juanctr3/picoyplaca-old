@@ -1,7 +1,7 @@
 <?php
 /**
- * PICO Y PLACA - Frontend Principal (RENOVADO)
- * Versión 4.0 - Grid, Ordenamiento y Búsqueda Avanzada
+ * PICO Y PLACA - Frontend Principal (Versión 5.0 Final)
+ * Correcciones: Bogotá Default, Reloj Exacto, Diseño Mejorado
  */
 
 // 1. Cargar Clases y Datos
@@ -11,25 +11,25 @@ $file_config = __DIR__ . '/datos/config.json';
 $file_festivos = __DIR__ . '/datos/festivos.json';
 $file_alerta = __DIR__ . '/datos/alertas.json';
 
-// Cargar datos (con fallbacks)
+// Cargar datos
 $ciudades = file_exists($file_config) ? json_decode(file_get_contents($file_config), true) : [];
 $festivos = file_exists($file_festivos) ? json_decode(file_get_contents($file_festivos), true) : [];
 $alertas_raw = file_exists($file_alerta) ? json_decode(file_get_contents($file_alerta), true) : [];
 $alertas_activas = is_array($alertas_raw) ? array_filter($alertas_raw, function($a){ return isset($a['activa']) && $a['activa']; }) : [];
 
-// --- NUEVO: Ordenar ciudades alfabéticamente ---
+// Ordenar ciudades alfabéticamente para el Grid
 uasort($ciudades, function($a, $b) {
     return strcmp($a['nombre'], $b['nombre']);
 });
 
-// --- NUEVO: Obtener lista única de tipos de vehículos para el buscador ---
+// Obtener lista de vehículos para el buscador
 $tipos_vehiculos_global = [];
 foreach ($ciudades as $c) {
     foreach ($c['vehiculos'] as $k => $v) {
         $tipos_vehiculos_global[$k] = $v['label'];
     }
 }
-// Ordenar vehículos (Particular primero por defecto visual)
+// Ordenar vehículos: Particular primero
 $prioridad = ['particular' => 1, 'moto' => 2, 'taxi' => 3];
 uksort($tipos_vehiculos_global, function($a, $b) use ($prioridad) {
     $pa = $prioridad[$a] ?? 99;
@@ -37,30 +37,29 @@ uksort($tipos_vehiculos_global, function($a, $b) use ($prioridad) {
     return $pa <=> $pb;
 });
 
+// 2. Parámetros URL (Lógica Bogotá Default)
+$vehiculo_sel = $_GET['vehicle'] ?? 'particular';
+// Si no hay parámetro 'city', forzamos 'bogota'. Si hay, usamos el get.
+$ciudad_sel_url = $_GET['city'] ?? 'bogota';
 
-// 2. Parámetros URL
-$vehiculo_sel = $_GET['vehicle'] ?? 'particular'; 
-$ciudad_sel_url = $_GET['city'] ?? array_key_first($ciudades); // Por defecto la primera alfabética o bogota si prefieres
-
-// Ajuste: Si la ciudad seleccionada no existe (por cambio de config), fallback a la primera
+// Validación de seguridad: si la ciudad no existe, volver a bogota
 if (!isset($ciudades[$ciudad_sel_url])) {
-    $ciudad_sel_url = array_key_first($ciudades);
+    $ciudad_sel_url = 'bogota';
 }
 
 $isDatePage = false;
 $dateData = [];
 
 // =============================================================================
-// LÓGICA 1: DATOS DE "HOY" + PRONÓSTICO + RELOJ
+// LÓGICA 1: DATOS DE "HOY" + RELOJ EXACTO
 // =============================================================================
 $ahora_global = new DateTime(); 
 $datos_hoy = [];
 
 if (!empty($ciudades)) {
     foreach ($ciudades as $codigo => $info) {
-        // Validar si el vehículo existe en esta ciudad, sino fallback a particular
+        // Fallback de vehículo
         $tipo_v = isset($info['vehiculos'][$vehiculo_sel]) ? $vehiculo_sel : 'particular';
-        // Si tampoco tiene particular (raro), usar el primero que tenga
         if (!isset($info['vehiculos'][$tipo_v])) {
             $tipo_v = array_key_first($info['vehiculos']);
         }
@@ -71,33 +70,71 @@ if (!empty($ciudades)) {
         $todas = [0,1,2,3,4,5,6,7,8,9];
         $permitidas = array_values(array_diff($todas, $info_hoy['restricciones']));
 
-        // --- B. Reloj Inteligente (Lógica simplificada) ---
+        // --- B. Reloj Inteligente (Lógica Mejorada) ---
         $target_timestamp = 0;
-        $estado_reloj = 'sin_datos';
-        $hora_actual = (int)$ahora_global->format('G');
+        $estado_reloj = 'sin_datos'; // inicia, termina, proximo, libre
+        $hora_actual = (int)$ahora_global->format('G'); // 0-23
         
-        // Parsear horario (ej: 6:00am - 9:00pm)
-        $h_ini = 6; $h_fin = 20; 
-        if (preg_match('/(\d{1,2}).*?(\d{1,2})/', $info_hoy['horario'], $m)) {
-            $h_ini = (int)$m[1];
-            $h_fin = (strpos(strtolower($info_hoy['horario']), 'p.m') !== false && (int)$m[2] < 12) ? (int)$m[2]+12 : (int)$m[2];
+        // Si es festivo, fin de semana (sin restricción) o excepción, el reloj no cuenta
+        if ($info_hoy['es_festivo'] || $info_hoy['es_fin_semana'] || ($info_hoy['es_excepcion'] ?? false)) {
+            $estado_reloj = 'libre';
+        } 
+        elseif (empty($info_hoy['restricciones'])) {
+             $estado_reloj = 'libre'; // Día hábil pero sin pico y placa para este vehículo
         }
+        else {
+            // Intentar parsear horario específico (Ej: "6:00 a.m. - 9:00 p.m.")
+            // Buscamos patrones simples de hora inicio y fin
+            $h_ini = 6; $h_fin = 20; // Default
+            
+            if (preg_match('/(\d{1,2})[:\.]?(\d{0,2}).*?(a\.?m\.?|p\.?m\.?).*?(\d{1,2})[:\.]?(\d{0,2}).*?(a\.?m\.?|p\.?m\.?)/i', $info_hoy['horario'], $m)) {
+                // $m[1] hora ini, $m[3] am/pm ini, $m[4] hora fin, $m[6] am/pm fin
+                $h_ini = (int)$m[1];
+                if (stripos($m[3], 'p') !== false && $h_ini < 12) $h_ini += 12;
+                
+                $h_fin = (int)$m[4];
+                if (stripos($m[6], 'p') !== false && $h_fin < 12) $h_fin += 12;
+            }
 
-        if (!empty($info_hoy['restricciones'])) {
+            // Lógica de estado
             if ($hora_actual < $h_ini) {
+                // Aún no empieza
                 $target_timestamp = strtotime(date('Y-m-d') . " $h_ini:00:00");
                 $estado_reloj = 'inicia';
             } elseif ($hora_actual >= $h_ini && $hora_actual < $h_fin) {
+                // Estamos en medio de la restricción
                 $target_timestamp = strtotime(date('Y-m-d') . " $h_fin:00:00");
                 $estado_reloj = 'termina';
             } else {
+                // Ya terminó por hoy -> Buscar mañana
                 $estado_reloj = 'proximo';
             }
-        } else {
-            $estado_reloj = 'proximo';
+        }
+        
+        // Si el estado es 'proximo' (ya acabó hoy), buscamos el siguiente día hábil
+        if ($estado_reloj === 'proximo') {
+            $fecha_iter = clone $ahora_global;
+            $encontrado = false;
+            // Iterar máx 7 días
+            for ($i = 1; $i <= 7; $i++) {
+                $fecha_iter->modify('+1 day');
+                $pyp_futuro = new PicoYPlaca($codigo, $fecha_iter, $ciudades, $festivos, $tipo_v);
+                $res_futuro = $pyp_futuro->getInfo();
+                
+                if (!empty($res_futuro['restricciones']) && !$res_futuro['es_festivo'] && !$res_futuro['es_excepcion']) {
+                    // Encontramos el próximo día con medida
+                    // Necesitamos la hora de inicio de ESE día (asumimos misma config horario general)
+                    // (Simplificación: usamos la misma hora de inicio detectada hoy o default 6am)
+                    $h_next = isset($h_ini) ? $h_ini : 6; 
+                    $target_timestamp = strtotime($fecha_iter->format('Y-m-d') . " $h_next:00:00");
+                    $encontrado = true;
+                    break;
+                }
+            }
+            if (!$encontrado) $estado_reloj = 'libre'; // No encontró restricción próxima
         }
 
-        // --- C. Pronóstico 5 Días ---
+        // --- C. Pronóstico ---
         $pronostico = [];
         $f_pron = clone $ahora_global;
         $dias_semana_abrev = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -121,7 +158,6 @@ if (!empty($ciudades)) {
             ];
         }
 
-        // --- NUEVO: Lista de vehículos disponibles en esta ciudad ---
         $lista_vehiculos_ciudad = [];
         foreach($info['vehiculos'] as $k_v => $d_v) {
             $lista_vehiculos_ciudad[$k_v] = $d_v['label'];
@@ -132,11 +168,12 @@ if (!empty($ciudades)) {
             'permitidas' => $permitidas,
             'horario' => $info_hoy['horario'],
             'nombre' => $info['nombre'],
-            'vehiculo_actual_key' => $tipo_v, // Saber cuál se calculó
+            'vehiculo_actual_key' => $tipo_v,
             'vehiculo_label' => $info_hoy['vehiculo_label'],
-            'vehiculos_disponibles' => $lista_vehiculos_ciudad, // Para las Tabs
+            'vehiculos_disponibles' => $lista_vehiculos_ciudad,
             'nombre_festivo' => $info_hoy['nombre_festivo'],
             'es_excepcion' => $info_hoy['es_excepcion'] ?? false,
+            'es_fin_semana' => $info_hoy['es_fin_semana'],
             'target_ts' => $target_timestamp, 
             'estado_reloj' => $estado_reloj,
             'pronostico' => $pronostico
@@ -146,14 +183,13 @@ if (!empty($ciudades)) {
 $datos_hoy_json = json_encode($datos_hoy);
 
 // =============================================================================
-// LÓGICA 2: PÁGINA FECHA ESPECÍFICA (SEO)
+// LÓGICA 2: PÁGINA FECHA ESPECÍFICA
 // =============================================================================
 if (preg_match('/pico-y-placa\/(\d{4})-(\d{2})-(\d{2})-(\w+)/', $_SERVER['REQUEST_URI'], $matches)) {
     $year = (int)$matches[1]; $month = (int)$matches[2]; $day = (int)$matches[3]; $ciudad_slug = $matches[4];
     
     if (isset($ciudades[$ciudad_slug])) {
         $fecha_consulta = new DateTime("$year-$month-$day");
-        // Validar vehículo
         $tipo_v = isset($ciudades[$ciudad_slug]['vehiculos'][$vehiculo_sel]) ? $vehiculo_sel : 'particular';
         
         $pyp = new PicoYPlaca($ciudad_slug, $fecha_consulta, $ciudades, $festivos, $tipo_v);
@@ -161,7 +197,6 @@ if (preg_match('/pico-y-placa\/(\d{4})-(\d{2})-(\d{2})-(\w+)/', $_SERVER['REQUES
         
         $monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
         
-        // Lista de otros vehículos para mostrar botones en fecha específica
         $otros_vehiculos = [];
         foreach($ciudades[$ciudad_slug]['vehiculos'] as $kv => $dv) {
             $otros_vehiculos[$kv] = $dv['label'];
@@ -197,7 +232,6 @@ $nombre_vehiculo_seo = $ciudades[$ciudad_sel_url]['vehiculos'][$vehiculo_sel]['l
 $ciudad_nombre_seo = $ciudades[$ciudad_sel_url]['nombre'] ?? 'Colombia';
 
 if ($isDatePage) {
-    // ... (Lógica SEO Fecha igual) ...
     $placas_txt = count($dateData['restrictions']) > 0 ? implode('-', $dateData['restrictions']) : 'Sin restricción';
     if($dateData['isHoliday']) $placas_txt = "Festivo";
     
@@ -205,7 +239,6 @@ if ($isDatePage) {
     $description = "Consulta la restricción para $nombre_vehiculo_seo en " . $dateData['cityName'] . ". Placas: $placas_txt.";
     $canonical = "https://picoyplacabogota.com.co/pico-y-placa/{$dateData['year']}-" . str_pad($dateData['month'], 2, '0', STR_PAD_LEFT) . "-" . str_pad($dateData['day'], 2, '0', STR_PAD_LEFT) . "-{$dateData['citySlug']}?vehicle=$vehiculo_sel";
 } else {
-    // Título dinámico inicial para PHP (luego JS lo actualiza)
     $title = "Pico y Placa $nombre_vehiculo_seo HOY en $ciudad_nombre_seo 🚗 | " . date('Y');
     $description = "Estado actual del Pico y Placa $nombre_vehiculo_seo en $ciudad_nombre_seo. Horarios y rotación al día.";
     $canonical = "https://picoyplacabogota.com.co/?city=$ciudad_sel_url&vehicle=$vehiculo_sel";
@@ -261,7 +294,9 @@ include 'includes/header.php';
                 </select>
             </div>
 
-            <div style="flex-basis: 100%; height: 0; margin: 0;"></div> <button type="submit" class="btn-search" style="flex: 1; min-width: 100%;">🔍 Consultar</button>
+            <div style="flex-basis: 100%; height: 0; margin: 0;"></div> 
+            
+            <button type="submit" class="btn-search" style="flex: 1; min-width: 100%;">🔍 Consultar</button>
         </form>
     </div>
     
@@ -286,7 +321,6 @@ include 'includes/header.php';
     <div class="main-content">
         
         <div class="search-box">
-            
             <div class="cities-grid-section">
                 <div class="slider-header"><h2>📍 Selecciona tu Ciudad</h2></div>
                 <div class="cities-grid-wrapper">
@@ -313,36 +347,36 @@ include 'includes/header.php';
             <div id="result-box" class="result-box"></div>
         </div>
         
-        <div class="restrictions-today">
-            <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
-                <div>
-                    <h2 style="margin: 0;">Restricciones HOY</h2>
-                    <h3 id="city-today" style="color: #667eea; margin: 5px 0 0 0; font-size: 1.3rem;">--</h3>
-                </div>
-                <span id="vehicle-badge-current" style="background: #e2e8f0; color: #4a5568; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;">
-                    --
-                </span>
-            </div>
-            
-            <div id="vehicle-tabs-container" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;">
-                </div>
-
-            <div id="dynamic-message-container" style="margin-bottom:15px; display:none; background:#f0fff4; color:#276749; padding:12px; border-radius:10px; border:1px solid #c6f6d5; font-weight:600;"></div>
-
-            <div id="restricted-section">
-                <p id="label-restricted" style="margin-bottom: 8px; font-weight: 700; color: #e53e3e;">🚫 No circulan:</p>
-                <div class="plates-list" id="plates-restricted-today"></div>
-            </div>
-            
-            <div id="allowed-section">
-                <p id="label-allowed" style="margin: 20px 0 8px 0; font-weight: 700; color: #38a169;">✅ Pueden circular:</p>
-                <div class="plates-list" id="plates-allowed-today"></div>
-            </div>
-
-            <div style="margin-top: 25px; padding-top: 20px; border-top: 2px dashed #eee;">
-                <h4 style="font-size: 1rem; color: #555; margin-bottom: 15px;">📅 Próximos días:</h4>
-                <div id="forecast-container" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px;">
+        <div class="results-wrapper"> <div class="restrictions-today results-card">
+                
+                <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.5rem;">Restricciones HOY</h2>
+                        <h3 id="city-today" style="color: #667eea; margin: 5px 0 0 0; font-size: 1.2rem;">--</h3>
                     </div>
+                    <span id="vehicle-badge-current" style="background: #e2e8f0; color: #4a5568; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;">
+                        --
+                    </span>
+                </div>
+                
+                <div id="vehicle-tabs-container" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;"></div>
+
+                <div id="dynamic-message-container" style="margin-bottom:15px; display:none; background:#f0fff4; color:#276749; padding:12px; border-radius:10px; border:1px solid #c6f6d5; font-weight:600;"></div>
+
+                <div id="restricted-section">
+                    <p id="label-restricted" style="margin-bottom: 8px; font-weight: 700; color: #e53e3e;">🚫 No circulan:</p>
+                    <div class="plates-list" id="plates-restricted-today"></div>
+                </div>
+                
+                <div id="allowed-section">
+                    <p id="label-allowed" style="margin: 20px 0 8px 0; font-weight: 700; color: #38a169;">✅ Pueden circular:</p>
+                    <div class="plates-list" id="plates-allowed-today"></div>
+                </div>
+
+                <div style="margin-top: 25px; padding-top: 20px; border-top: 2px dashed #eee;">
+                    <h4 style="font-size: 1rem; color: #555; margin-bottom: 15px;">📅 Próximos días:</h4>
+                    <div id="forecast-container" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -361,7 +395,7 @@ include 'includes/header.php';
         <span>←</span> Volver al inicio
     </button>
 
-    <div style="background: white; padding: 30px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
+    <div style="background: white; padding: 30px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); max-width: 800px; margin-left: auto; margin-right: auto;">
         <div style="text-align: center; margin-bottom: 30px;">
             <h2 style="margin-bottom: 5px; font-size: 2.5rem; color: #2d3748;">
                 📅 <?php echo htmlspecialchars($dateData['dayNum']); ?> de <?php echo ucfirst($dateData['monthName']); ?>
@@ -437,10 +471,8 @@ include 'includes/header.php';
 <script>
     function backToHome() { window.location.href = '/'; }
     
-    // Solo cargar lógica principal si estamos en home
     <?php if (!$isDatePage): ?>
     
-    // --- LÓGICA SEARCH (Actualizada con Vehículo) ---
     function searchByDate(e) {
         e.preventDefault();
         const d = document.getElementById('dateInput').value;
@@ -448,13 +480,11 @@ include 'includes/header.php';
         const v = document.getElementById('vehicleSelect').value;
         
         if(d && c) {
-            // Redirección amigable SEO
             window.location.href = `/pico-y-placa/${d}-${c}?vehicle=${v}`;
         }
     }
 
-    // --- ESTILOS ADICIONALES PARA GRID ---
-    // (Se recomienda mover esto a styles.css, pero se deja aquí para funcionalidad inmediata)
+    // Estilos dinámicos para Grid de ciudades
     const extraStyles = `
         .cities-grid-wrapper {
             display: grid;
