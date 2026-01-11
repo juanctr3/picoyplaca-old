@@ -10,10 +10,11 @@ class DataManager {
     // Ruta base a la carpeta de datos
     const PATH_DATOS = __DIR__ . '/../datos/';
     
-    // Nombres de archivos definidos como constantes para evitar errores de dedo
+    // Nombres de archivos definidos como constantes
     const FILE_CONFIG = 'config.json';
     const FILE_FESTIVOS = 'festivos.json';
     const FILE_ALERTAS = 'alertas.json';
+    const FILE_EXCEPCIONES = 'excepciones.json'; // Nuevo archivo para levantar medidas
 
     /**
      * Lee un archivo JSON y devuelve su contenido como Array.
@@ -30,7 +31,7 @@ class DataManager {
         $contenido = file_get_contents($ruta);
         $datos = json_decode($contenido, true);
         
-        // Si json_decode falla (null), retornamos array vacío para evitar errores en foreach
+        // Si json_decode falla (null), retornamos array vacío para evitar errores
         return $datos ?? [];
     }
 
@@ -52,8 +53,8 @@ class DataManager {
         $ruta = self::PATH_DATOS . $archivo;
         
         // 2. Codificar a JSON
-        // JSON_PRETTY_PRINT: Para que el archivo sea legible por humanos si lo abres.
-        // JSON_UNESCAPED_UNICODE: Para que las tildes y ñ se guarden bien (no como \u00f1).
+        // JSON_PRETTY_PRINT: Para que el archivo sea legible por humanos.
+        // JSON_UNESCAPED_UNICODE: Para guardar tildes y ñ correctamente.
         $json = json_encode($datos, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         
         if ($json === false) {
@@ -70,7 +71,7 @@ class DataManager {
         return true;
     }
 
-    // --- Helpers Específicos (Atajos) ---
+    // --- Helpers Específicos: Ciudades ---
 
     public static function getCiudades() {
         return self::get(self::FILE_CONFIG);
@@ -80,22 +81,27 @@ class DataManager {
         return self::save(self::FILE_CONFIG, $datos);
     }
 
+    // --- Helpers Específicos: Festivos ---
+
     public static function getFestivos() {
         return self::get(self::FILE_FESTIVOS);
     }
 
     public static function saveFestivos($datos) {
-        // Ordenar array de objetos por la clave "fecha"
+        // Ordenar por fecha (soporta formato antiguo string y nuevo array con 'fecha')
         usort($datos, function($a, $b) {
-            return strcmp($a['fecha'], $b['fecha']);
+            $fa = is_array($a) ? $a['fecha'] : $a;
+            $fb = is_array($b) ? $b['fecha'] : $b;
+            return strcmp($fa, $fb);
         });
         
         // Eliminar duplicados de fecha
         $unicos = [];
         $fechas_vistas = [];
         foreach($datos as $d) {
-            if(!in_array($d['fecha'], $fechas_vistas)) {
-                $fechas_vistas[] = $d['fecha'];
+            $fecha = is_array($d) ? $d['fecha'] : $d;
+            if(!in_array($fecha, $fechas_vistas)) {
+                $fechas_vistas[] = $fecha;
                 $unicos[] = $d;
             }
         }
@@ -103,12 +109,29 @@ class DataManager {
         return self::save(self::FILE_FESTIVOS, $unicos);
     }
 
-    public static function getAlerta() {
+    // --- Helpers Específicos: Alertas (Actualizado) ---
+
+    public static function getAlertas() {
         return self::get(self::FILE_ALERTAS);
     }
     
-    public static function saveAlerta($datos) {
+    public static function saveAlertas($datos) {
+        // Ahora guardamos un array de alertas, no una sola alerta global
         return self::save(self::FILE_ALERTAS, $datos);
+    }
+
+    // --- Helpers Específicos: Excepciones (NUEVO) ---
+
+    public static function getExcepciones() {
+        return self::get(self::FILE_EXCEPCIONES);
+    }
+
+    public static function saveExcepciones($datos) {
+        // Ordenar cronológicamente por fecha
+        usort($datos, function($a, $b) {
+            return strcmp($a['fecha'], $b['fecha']);
+        });
+        return self::save(self::FILE_EXCEPCIONES, $datos);
     }
 }
 ?>
