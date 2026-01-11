@@ -135,28 +135,6 @@
         footer { text-align: center; color: white; padding: 15px; opacity: 0.9; }
         
         @media (max-width: 480px) { .date-search-section, .search-box, .restrictions-today { padding: 15px; } input, select { font-size: 16px; } }
-                          
-        /* PWA */
-        #pwaBtnContainer { position: fixed; bottom: 70px; right: 15px; display: flex; flex-direction: column; gap: 10px; z-index: 9999; animation: slideUpPwa 0.5s ease-out; }
-        #pwaBtnContainer.show { display: flex !important; }
-        @keyframes slideUpPwa { from { opacity: 0; transform: translateY(100px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .floating-install-btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px 18px; border-radius: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4); transition: all 0.3s; font-size: 1rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 150px; justify-content: center; }
-        .floating-install-btn-primary:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(102, 126, 234, 0.6); }
-        .floating-install-btn-close { background: #ff6b6b; color: white; border: none; width: 50px; height: 50px; border-radius: 50%; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px rgba(255, 107, 107, 0.3); transition: all 0.3s; font-size: 1.3rem; font-family: 'Poppins', sans-serif; display: flex; align-items: center; justify-content: center; padding: 0; }
-        .floating-install-btn-close:hover { transform: scale(1.1); }
-        
-        @media (max-width: 768px) { #pwaBtnContainer { bottom: 80px; right: 10px; left: 10px; flex-direction: row; gap: 8px; justify-content: flex-end; } .floating-install-btn-primary { flex: 1; min-width: auto; padding: 12px 14px; font-size: 0.95rem; } }
-        @media (max-width: 480px) { #pwaBtnContainer { bottom: 70px; right: 8px; left: 8px; } .floating-install-btn-close { width: 40px; height: 40px; font-size: 1rem; } }
-        
-        #iosModalPwa { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 10000; align-items: center; justify-content: center; padding: 20px; }
-        #iosModalPwa.show { display: flex; }
-        .ios-modal-content { background: white; padding: 25px; border-radius: 20px; max-width: 400px; text-align: center; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); animation: scaleIn 0.3s ease-out; }
-        @keyframes scaleIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
-        .ios-modal-content h2 { color: #667eea; margin-bottom: 15px; }
-        .ios-steps { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 10px; margin: 15px 0; font-size: 0.9rem; }
-        .ios-steps ol { margin: 10px 0; padding-left: 20px; }
-        .ios-modal-close { background: #667eea; color: white; border: none; padding: 12px 25px; border-radius: 8px; font-weight: 600; cursor: pointer; font-family: 'Poppins', sans-serif; }
                                 
         .subtitle { font-size: 1.1rem; opacity: 0.95; line-height: 1.5; transition: all 0.3s ease; }
         #cityNameSubtitle { transition: all 0.4s ease; }
@@ -166,10 +144,6 @@
 <body>
     <div class="container">
         <header>
-            <div id="pwaBtnContainer" style="display: none;">
-                <button id="installPwaBtn" class="floating-install-btn-primary">⬇️ <span id="installBtnText">Instalar App</span></button>
-                <button id="closePwaBtn" class="floating-install-btn-close">✕</button>
-            </div>
             
             <h1 id="pageTitle">
             <?php if ($isDatePage): ?>
