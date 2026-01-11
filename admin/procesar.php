@@ -2,7 +2,7 @@
 /**
  * admin/procesar.php
  * Controlador principal: Recibe formularios y peticiones para guardar datos.
- * Maneja Ciudades, Vehículos, Festivos (con nombres) y Alertas.
+ * Maneja Ciudades, Vehículos, Festivos, Alertas Múltiples y Excepciones.
  */
 
 require_once 'auth.php';
@@ -12,7 +12,6 @@ require_once 'data_manager.php';
 $accion = $_REQUEST['accion'] ?? '';
 
 if (!$accion) {
-    // Si no hay acción, mandamos al dashboard con error
     header('Location: index.php?error=sin_accion');
     exit;
 }
@@ -20,12 +19,12 @@ if (!$accion) {
 switch ($accion) {
     
     // =========================================================================
-    // 1. GESTIÓN DE CIUDADES (GUARDAR / EDITAR)
+    // 1. GESTIÓN DE CIUDADES
     // =========================================================================
     case 'guardar_ciudad':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') die('Método incorrecto');
 
-        // 1. Recibir datos básicos
+        // Recibir datos básicos
         $id_slug = trim($_POST['id_slug'] ?? '');
         $id_original = trim($_POST['id_original'] ?? '');
         $nombre = trim($_POST['nombre'] ?? '');
@@ -34,41 +33,37 @@ switch ($accion) {
             die('Error: Faltan datos obligatorios (Slug o Nombre).');
         }
 
-        // 2. Cargar ciudades actuales
         $ciudades = DataManager::getCiudades();
 
-        // 3. Validar duplicados (solo si es nuevo)
+        // Validar duplicados (solo si es nuevo)
         if (!$id_original && isset($ciudades[$id_slug])) {
             die("Error: Ya existe una ciudad con el identificador '$id_slug'.");
         }
 
-        // 4. Preparar estructura de la ciudad
+        // Estructura de la ciudad
         $nueva_ciudad = [
             'nombre' => $nombre,
             'vehiculos' => []
         ];
 
-        // 5. Procesar vehículos (vienen en arrays paralelos desde el formulario)
+        // Procesar vehículos
         if (isset($_POST['v_keys'])) {
-            $keys = $_POST['v_keys'];         // IDs internos (ej: particular)
-            $labels = $_POST['v_labels'];     // Nombres visibles (ej: Particulares)
-            $logicas = $_POST['v_logicas'];   // Algoritmos (ej: semanal-fijo)
-            $horarios = $_POST['v_horarios']; // Texto horario
-            $configs = $_POST['v_configs'];   // JSON con reglas extra
+            $keys = $_POST['v_keys'];
+            $labels = $_POST['v_labels'];
+            $logicas = $_POST['v_logicas'];
+            $horarios = $_POST['v_horarios'];
+            $configs = $_POST['v_configs']; 
 
             for ($i = 0; $i < count($keys); $i++) {
                 $v_key = trim($keys[$i]);
                 if (!$v_key) continue;
 
-                // Datos base del vehículo
                 $vehiculo_data = [
                     'label' => $labels[$i],
                     'logica' => $logicas[$i],
                     'horario' => $horarios[$i]
                 ];
 
-                // Decodificar configuración avanzada (JSON)
-                // Esto permite guardar reglas complejas o arrays específicos
                 $extra_config = json_decode($configs[$i], true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($extra_config)) {
                     $vehiculo_data = array_merge($vehiculo_data, $extra_config);
@@ -78,15 +73,12 @@ switch ($accion) {
             }
         }
 
-        // 6. Guardar en el array principal
-        // Si se cambió el slug (aunque el input es readonly en edición), borramos el anterior
+        // Guardar
         if ($id_original && $id_original !== $id_slug) {
             unset($ciudades[$id_original]);
         }
-        
         $ciudades[$id_slug] = $nueva_ciudad;
 
-        // 7. Escribir en archivo JSON
         if (DataManager::saveCiudades($ciudades)) {
             header('Location: ciudades.php?msg=Ciudad guardada correctamente');
         } else {
@@ -94,9 +86,6 @@ switch ($accion) {
         }
         break;
 
-    // =========================================================================
-    // 2. ELIMINAR CIUDAD
-    // =========================================================================
     case 'eliminar_ciudad':
         $id = $_GET['id'] ?? '';
         if (!$id) die('Falta ID');
@@ -110,7 +99,7 @@ switch ($accion) {
         break;
 
     // =========================================================================
-    // 3. AGREGAR FESTIVO (CON NOMBRE)
+    // 2. GESTIÓN DE FESTIVOS
     // =========================================================================
     case 'agregar_festivo':
         $fecha = $_POST['fecha'] ?? '';
@@ -120,79 +109,142 @@ switch ($accion) {
 
         $festivos = DataManager::getFestivos();
         
-        // Verificar si la fecha ya existe para evitar duplicados
+        // Evitar duplicados
         $existe = false;
         foreach($festivos as $f) {
-            // Comprobar compatibilidad con formato antiguo (string) y nuevo (array)
             $f_fecha = is_array($f) ? $f['fecha'] : $f;
-            if ($f_fecha === $fecha) {
-                $existe = true; 
-                break;
-            }
+            if ($f_fecha === $fecha) { $existe = true; break; }
         }
         
         if (!$existe) {
-            // Guardamos la nueva estructura: Objeto con fecha y nombre
-            $festivos[] = [
-                'fecha' => $fecha, 
-                'nombre' => $nombre
-            ];
-            // DataManager se encarga de ordenar por fecha
+            $festivos[] = ['fecha' => $fecha, 'nombre' => $nombre];
             DataManager::saveFestivos($festivos);
         }
-        
-        header('Location: festivos.php?msg=Festivo agregado correctamente');
+        header('Location: festivos.php?msg=Festivo agregado');
         break;
 
-    // =========================================================================
-    // 4. ELIMINAR FESTIVO
-    // =========================================================================
     case 'eliminar_festivo':
         $fecha = $_GET['fecha'] ?? '';
         if (!$fecha) die('Falta fecha');
 
         $festivos = DataManager::getFestivos();
         $nuevos_festivos = [];
-        
-        // Reconstruimos el array excluyendo la fecha seleccionada
         foreach($festivos as $f) {
             $f_fecha = is_array($f) ? $f['fecha'] : $f;
-            if ($f_fecha !== $fecha) {
-                $nuevos_festivos[] = $f;
-            }
+            if ($f_fecha !== $fecha) $nuevos_festivos[] = $f;
         }
-        
-        // Si hubo cambios, guardamos (esto reindexa el array automáticamente)
-        if (count($nuevos_festivos) !== count($festivos)) {
-            DataManager::saveFestivos($nuevos_festivos);
-        }
-        
+        DataManager::saveFestivos($nuevos_festivos);
         header('Location: festivos.php?msg=Festivo eliminado');
         break;
 
     // =========================================================================
-    // 5. GUARDAR ALERTA GLOBAL (ALERTAS FLASH)
+    // 3. GESTIÓN DE ALERTAS (NUEVO: Múltiples Alertas)
     // =========================================================================
     case 'guardar_alerta':
-        // El checkbox 'activa' solo se envía si está marcado
-        $alerta = [
-            'activa' => isset($_POST['activa']), 
-            'mensaje' => trim($_POST['mensaje'] ?? ''),
-            'tipo' => $_POST['tipo'] ?? 'info',
-            'url' => trim($_POST['url'] ?? '')
+        $ciudad_id = $_POST['ciudad_id'] ?? 'global';
+        $tipo = $_POST['tipo'] ?? 'info';
+        $mensaje = trim($_POST['mensaje'] ?? '');
+        $url = trim($_POST['url'] ?? '');
+        $activa = isset($_POST['activa']) ? true : false;
+
+        if (!$mensaje) die('El mensaje es obligatorio');
+
+        $alertas = DataManager::getAlertas();
+
+        // Crear nueva alerta con ID único
+        $nueva_alerta = [
+            'id' => uniqid('alert_'), // ID único para poder borrarla después
+            'ciudad_id' => $ciudad_id,
+            'tipo' => $tipo,
+            'mensaje' => $mensaje,
+            'url' => $url,
+            'activa' => $activa,
+            'fecha_creacion' => date('Y-m-d H:i:s')
         ];
 
-        if (DataManager::saveAlerta($alerta)) {
-            header('Location: alertas.php?msg=Configuración de alerta actualizada');
-        } else {
-            die('Error al guardar alerta');
+        // Añadir al inicio del array
+        array_unshift($alertas, $nueva_alerta);
+
+        DataManager::saveAlertas($alertas);
+        header('Location: alertas.php?msg=Alerta publicada correctamente');
+        break;
+
+    case 'eliminar_alerta':
+        $id = $_GET['id'] ?? '';
+        if (!$id) die('Falta ID de alerta');
+
+        $alertas = DataManager::getAlertas();
+        $nuevas_alertas = [];
+
+        foreach ($alertas as $a) {
+            // Soporte para alertas antiguas sin ID (si las hubiera) o match por ID
+            if (isset($a['id']) && $a['id'] === $id) {
+                continue; // Saltar (borrar)
+            }
+            $nuevas_alertas[] = $a;
         }
+
+        DataManager::saveAlertas($nuevas_alertas);
+        header('Location: alertas.php?msg=Alerta eliminada');
         break;
 
     // =========================================================================
-    // DEFAULT: ACCIÓN NO RECONOCIDA
+    // 4. GESTIÓN DE EXCEPCIONES (LEVANTAMIENTO DE MEDIDA)
+    // =========================================================================
+    case 'guardar_excepcion':
+        $fecha = $_POST['fecha'] ?? '';
+        $ciudad = $_POST['ciudad'] ?? '';
+        $vehiculo = $_POST['vehiculo'] ?? 'todos';
+        $motivo = trim($_POST['motivo'] ?? '');
+
+        if (!$fecha || !$ciudad || !$motivo) die('Faltan datos para la excepción');
+
+        $excepciones = DataManager::getExcepciones();
+
+        // Evitar duplicados exactos (misma fecha, ciudad y vehículo)
+        foreach ($excepciones as $k => $ex) {
+            if ($ex['fecha'] === $fecha && $ex['ciudad'] === $ciudad && $ex['vehiculo'] === $vehiculo) {
+                unset($excepciones[$k]); // Si existe, la reemplazamos (actualizar motivo)
+            }
+        }
+
+        $excepciones[] = [
+            'fecha' => $fecha,
+            'ciudad' => $ciudad,
+            'vehiculo' => $vehiculo,
+            'motivo' => $motivo
+        ];
+
+        DataManager::saveExcepciones($excepciones); // El manager se encarga de ordenar
+        header('Location: excepciones.php?msg=Excepción creada correctamente');
+        break;
+
+    case 'eliminar_excepcion':
+        $fecha = $_GET['fecha'] ?? '';
+        $ciudad = $_GET['ciudad'] ?? '';
+        $vehiculo = $_GET['vehiculo'] ?? '';
+
+        if (!$fecha || !$ciudad || !$vehiculo) die('Faltan parámetros');
+
+        $excepciones = DataManager::getExcepciones();
+        $nuevas_excepciones = [];
+
+        foreach ($excepciones as $ex) {
+            // Si coincide todo, lo saltamos (borrar)
+            if ($ex['fecha'] === $fecha && $ex['ciudad'] === $ciudad && $ex['vehiculo'] === $vehiculo) {
+                continue;
+            }
+            $nuevas_excepciones[] = $ex;
+        }
+
+        DataManager::saveExcepciones($nuevas_excepciones);
+        header('Location: excepciones.php?msg=Excepción eliminada y medida restaurada');
+        break;
+
+    // =========================================================================
+    // DEFAULT
     // =========================================================================
     default:
-        die("Acción desconocida o no válida: " . htmlspecialchars($accion));
+        die("Acción desconocida: " . htmlspecialchars($accion));
 }
 ?>
