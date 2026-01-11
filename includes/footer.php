@@ -8,7 +8,7 @@
         </div>
     </footer>
 
-    <div id="pwaBtnContainer">
+    <div id="pwaBtnContainer" style="display: none;">
         <div class="pwa-icon">📱</div>
         <div class="pwa-text">
             <strong>Instalar App</strong>
@@ -26,7 +26,7 @@
         const currentVehicle = '<?php echo $vehiculo_sel ?? "particular"; ?>';
         let countdownInterval;
 
-        // --- 2. LÓGICA PWA (Instalar App) - CORREGIDA ---
+        // --- 2. LÓGICA PWA (Instalar App) - CORREGIDA Y MEJORADA ---
         document.addEventListener('DOMContentLoaded', () => {
             let deferredPrompt; // Variable para guardar el evento de instalación
             const pwaContainer = document.getElementById('pwaBtnContainer');
@@ -43,13 +43,22 @@
 
             // A. Escuchar si el navegador permite instalar (Chrome/Edge/Android)
             window.addEventListener('beforeinstallprompt', (e) => {
-                e.preventDefault(); // Evitar barra nativa automática
+                // 1. Evitar barra nativa automática
+                e.preventDefault(); 
                 deferredPrompt = e; // Guardar el evento
+
+                // 2. VERIFICACIÓN CRÍTICA: ¿El usuario ya lo cerró antes?
+                const isDismissed = localStorage.getItem('pwa_dismissed') === 'true';
                 
-                // Mostrar nuestro botón personalizado
+                if (isDismissed) {
+                    console.log('Usuario cerró previamente el banner de instalación.');
+                    return; // No hacer nada, no mostrar el botón.
+                }
+                
+                // 3. Mostrar nuestro botón personalizado si no ha sido descartado
                 if (pwaContainer) {
                     pwaContainer.style.display = 'flex';
-                    // Pequeño delay para que la animación CSS funcione
+                    // Pequeño delay para que la animación CSS funcione (slideUp)
                     setTimeout(() => pwaContainer.classList.add('show'), 50);
                 }
             });
@@ -69,8 +78,12 @@
                         deferredPrompt.prompt(); // Lanzar popup nativo
                         const { outcome } = await deferredPrompt.userChoice;
                         console.log('Resultado instalación:', outcome);
-                        deferredPrompt = null; // Limpiar variable
-                        hidePWA(); // Ocultar botón
+                        
+                        // Si aceptó instalar, ocultamos el botón permanentemente
+                        if(outcome === 'accepted'){
+                             hidePWA();
+                        }
+                        deferredPrompt = null; 
                     }
                 });
             }
@@ -80,6 +93,10 @@
                 closeBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation(); // Evitar conflictos
+                    
+                    // CORRECCIÓN: Guardar en localStorage que el usuario lo cerró
+                    localStorage.setItem('pwa_dismissed', 'true');
+                    
                     hidePWA();
                 });
             }
@@ -87,6 +104,7 @@
             // D. Si ya se instaló, ocultar todo
             window.addEventListener('appinstalled', () => {
                 hidePWA();
+                localStorage.setItem('pwa_dismissed', 'true'); // Asegurar que no vuelva a salir
                 console.log('Aplicación instalada con éxito');
             });
         });
@@ -125,13 +143,17 @@
             console.log('📍 Actualizando UI:', selectedCity);
 
             // Textos básicos
-            document.getElementById('city-today').textContent = data.nombre;
-            document.getElementById('city-schedule').textContent = data.horario;
+            const cityTodayEl = document.getElementById('city-today');
+            if(cityTodayEl) cityTodayEl.textContent = data.nombre;
+            
+            const citySchedEl = document.getElementById('city-schedule');
+            if(citySchedEl) citySchedEl.textContent = data.horario;
             
             const today = new Date();
             const options = {weekday: 'long', day: 'numeric', month: 'long'};
             const dateStr = today.toLocaleDateString('es-CO', options);
-            document.getElementById('today-date').textContent = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+            const todayDateEl = document.getElementById('today-date');
+            if(todayDateEl) todayDateEl.textContent = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
 
             // Actualizar Título de pestaña (SEO)
             if (!window.location.pathname.includes('/pico-y-placa/')) {
@@ -154,7 +176,8 @@
             document.body.classList.remove('sin-pico', 'pico-activo');
 
             // --- LÓGICA DE ESTADOS ---
-            
+            if(!statusEl) return; 
+
             if (data.es_excepcion) {
                 // 1. EXCEPCIÓN (Medida levantada)
                 statusEl.innerHTML = '<span style="color:#27ae60;">🔓 Medida Levantada</span>';
